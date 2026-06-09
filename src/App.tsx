@@ -7,6 +7,7 @@ import { Header } from './components/Header.js'
 import { ProtectedRoute } from './components/ProtectedRoute.js'
 import { useTerminalStore } from './store/terminalStore.js'
 import { useHardwareBack } from './hooks/useHardwareBack.js'
+import { IncomingOrderOverlay } from './components/IncomingOrderOverlay.js'
 import './App.css'
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
   return (
     <div className="app-shell">
       {isAuthenticated && <Header />}
+      {isAuthenticated && <IncomingOrderOverlay />}
       <main className="main-content">
         <Routes>
           <Route path="/login" element={<Login />} />

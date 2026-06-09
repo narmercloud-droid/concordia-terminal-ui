@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useOrderStore } from '../store/orderStore.js'
 import { useSocket } from '../hooks/useSocket.js'
 import { useTerminalStore } from '../store/terminalStore.js'
-import { usePendingAlert } from '../hooks/usePendingAlert.js'
 import { OrderCard } from '../components/OrderCard.js'
 import { Loader } from '../components/Loader.js'
 import { Toast } from '../components/Toast.js'
@@ -32,7 +31,6 @@ const Orders = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const { connected } = useSocket({ enabled: true })
-  usePendingAlert()
 
   const tabLabels: Record<OrderTab, string> = {
     active: t('tabActive'),
@@ -89,12 +87,7 @@ const Orders = () => {
   return (
     <div className="page-shell terminal-page">
       <div className="terminal-hero">
-        <div>
-          <h1>{branch_name || t('orders')}</h1>
-          <p className="terminal-subtitle">
-            {t('todayOnly')} · {connected ? t('live') : t('reconnecting')}
-          </p>
-        </div>
+        <h1>{branch_name || t('orders')}</h1>
         {ordersPaused ? <div className="pause-banner">{t('ordersPaused')}</div> : null}
       </div>
 

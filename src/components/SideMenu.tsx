@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { useI18n, type Language } from '../i18n/index.js'
+import { getApiErrorMessage } from '../lib/apiErrors.js'
 import '../App.css'
 
 interface SideMenuProps {
@@ -9,17 +11,36 @@ interface SideMenuProps {
 }
 
 export function SideMenu({ open, onClose }: SideMenuProps) {
+  const branch_id = useTerminalStore((state) => state.branch_id)
   const ordersPaused = useTerminalStore((state) => state.ordersPaused)
   const setOrdersPaused = useTerminalStore((state) => state.setOrdersPaused)
+  const loadBranchStatus = useTerminalStore((state) => state.loadBranchStatus)
   const language = useI18n((s) => s.language)
   const setLanguage = useI18n((s) => s.setLanguage)
   const t = useI18n((s) => s.t)
+  const [toggling, setToggling] = useState(false)
+  const [feedback, setFeedback] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (open && branch_id) {
+      loadBranchStatus(branch_id).catch(console.error)
+    }
+  }, [open, branch_id, loadBranchStatus])
 
   const togglePause = async () => {
+    setToggling(true)
+    setError('')
+    setFeedback('')
     try {
-      await setOrdersPaused(!ordersPaused)
+      const nextPaused = !ordersPaused
+      await setOrdersPaused(nextPaused)
+      setFeedback(nextPaused ? t('ordersPausedConfirm') : t('ordersResumedConfirm'))
+      window.setTimeout(() => setFeedback(''), 4000)
     } catch (err) {
-      console.error(err)
+      setError(getApiErrorMessage(err) ?? t('pauseToggleFailed'))
+    } finally {
+      setToggling(false)
     }
   }
 
@@ -34,13 +55,22 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
       <aside className="side-menu" onClick={(e) => e.stopPropagation()}>
         <h2>{t('menu')}</h2>
 
+        <div className={`pause-status ${ordersPaused ? 'paused' : 'active'}`}>
+          <span className="pause-status-dot" />
+          <span>{ordersPaused ? t('ordersPausedLabel') : t('ordersActiveLabel')}</span>
+        </div>
+
         <button
           type="button"
           className={`button ${ordersPaused ? 'danger' : 'secondary'} side-menu-btn`}
           onClick={togglePause}
+          disabled={toggling}
         >
-          {ordersPaused ? t('resumeOrders') : t('pauseOrders')}
+          {toggling ? '…' : ordersPaused ? t('resumeOrders') : t('pauseOrders')}
         </button>
+
+        {feedback ? <p className="side-menu-feedback success">{feedback}</p> : null}
+        {error ? <p className="side-menu-feedback error">{error}</p> : null}
 
         <NavLink to="/day-report" className="side-menu-link" onClick={onClose}>
           {t('dayReport')}

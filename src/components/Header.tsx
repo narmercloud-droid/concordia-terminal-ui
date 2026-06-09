@@ -7,6 +7,7 @@ import '../App.css'
 
 export const Header = () => {
   const branch_name = useTerminalStore((state) => state.branch_name)
+  const ordersPaused = useTerminalStore((state) => state.ordersPaused)
   const [menuOpen, setMenuOpen] = useState(false)
   const t = useI18n((s) => s.t)
 
@@ -24,7 +25,10 @@ export const Header = () => {
         <div className="header-brand">
           <p className="terminal-name">{branch_name || t('appName')}</p>
         </div>
-        <StatusIndicator />
+        <div className="header-actions">
+          {ordersPaused ? <span className="header-paused-pill">{t('ordersPausedShort')}</span> : null}
+          <StatusIndicator />
+        </div>
       </header>
       <SideMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
     </>
