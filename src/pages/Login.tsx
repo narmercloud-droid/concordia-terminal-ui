@@ -6,6 +6,7 @@ import axios from 'axios'
 import { terminalApi } from '../api/terminal.js'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { ErrorMessage } from '../components/ErrorMessage.js'
+import { useI18n } from '../i18n/index.js'
 import '../App.css'
 
 function loginErrorMessage(err: unknown): string {
@@ -28,6 +29,7 @@ const loginSchema = z.object({
 })
 
 const Login = () => {
+  const t = useI18n((s) => s.t)
   const [branch_code, setBranchCode] = useState('KEMPEN')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -75,11 +77,11 @@ const Login = () => {
   return (
     <div className="page-shell">
       <section className="card login-card">
-        <h1>Concordia Terminal</h1>
-        <p>Enter your branch code once. This device stays connected to receive orders.</p>
+        <h1>{t('connectTitle')}</h1>
+        <p>{t('connectSubtitle')}</p>
 
         <form className="form-grid" onSubmit={handleSubmit}>
-          <label htmlFor="branch_code">Branch code</label>
+          <label htmlFor="branch_code">{t('branchCode')}</label>
           <input
             id="branch_code"
             type="text"
@@ -93,7 +95,7 @@ const Login = () => {
           {error && <ErrorMessage message={error} />}
 
           <button className="button primary" type="submit" disabled={loading}>
-            {loading ? 'Connecting…' : 'Connect terminal'}
+            {loading ? t('connecting') : t('connect')}
           </button>
         </form>
       </section>

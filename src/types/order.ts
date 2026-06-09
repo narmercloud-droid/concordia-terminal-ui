@@ -29,6 +29,10 @@ export interface Order {
   status: OrderStatus
   delivery_type?: string
   estimated_time?: string
+  estimatedPrepMinutes?: number
+  etaReadyAt?: string
+  etaDeliveredAt?: string
+  confirmedAt?: string
   scheduledFor?: string
   paymentMethod?: string
   notes?: string

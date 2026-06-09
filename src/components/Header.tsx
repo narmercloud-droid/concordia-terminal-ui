@@ -1,64 +1,32 @@
-import { useEffect, useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import { useState } from 'react'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { StatusIndicator } from './StatusIndicator.js'
+import { SideMenu } from './SideMenu.js'
+import { useI18n } from '../i18n/index.js'
 import '../App.css'
 
 export const Header = () => {
   const branch_name = useTerminalStore((state) => state.branch_name)
-  const terminal_code = useTerminalStore((state) => state.terminal_code)
-  const branch_id = useTerminalStore((state) => state.branch_id)
-  const ordersPaused = useTerminalStore((state) => state.ordersPaused)
-  const loadBranchStatus = useTerminalStore((state) => state.loadBranchStatus)
-  const setOrdersPaused = useTerminalStore((state) => state.setOrdersPaused)
-  const logout = useTerminalStore((state) => state.logout)
-  const [toggling, setToggling] = useState(false)
-
-  useEffect(() => {
-    if (branch_id) {
-      loadBranchStatus(branch_id).catch(console.error)
-    }
-  }, [branch_id, loadBranchStatus])
-
-  const handlePauseToggle = async () => {
-    setToggling(true)
-    try {
-      await setOrdersPaused(!ordersPaused)
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setToggling(false)
-    }
-  }
+  const [menuOpen, setMenuOpen] = useState(false)
+  const t = useI18n((s) => s.t)
 
   return (
-    <header className="app-header">
-      <div>
-        <p className="terminal-name">{branch_name || 'Concordia Terminal'}</p>
-        <p className="terminal-meta">Code: {terminal_code || '—'}</p>
-      </div>
-      <nav className="header-nav">
-        <NavLink to="/orders" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-          Bestellungen
-        </NavLink>
-        <NavLink to="/day-report" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-          Tagesabschluss
-        </NavLink>
-      </nav>
-      <div className="header-actions">
+    <>
+      <header className="app-header">
         <button
-          className={`button ${ordersPaused ? 'danger' : 'secondary'} pause-toggle`}
           type="button"
-          onClick={handlePauseToggle}
-          disabled={toggling}
+          className="menu-button"
+          aria-label={t('menu')}
+          onClick={() => setMenuOpen(true)}
         >
-          {toggling ? '…' : ordersPaused ? 'Bestellungen fortsetzen' : 'Bestellungen pausieren'}
+          ☰
         </button>
+        <div className="header-brand">
+          <p className="terminal-name">{branch_name || t('appName')}</p>
+        </div>
         <StatusIndicator />
-        <button className="button tertiary" type="button" onClick={logout}>
-          Trennen
-        </button>
-      </div>
-    </header>
+      </header>
+      <SideMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
+    </>
   )
 }

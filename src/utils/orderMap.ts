@@ -36,10 +36,15 @@ export function mapApiOrder(raw: any): Order {
     scheduledFor: raw.scheduledFor ?? raw.scheduled_for ?? undefined,
     paymentMethod: raw.paymentMethod ?? raw.payment_method ?? undefined,
     notes: raw.notes ?? undefined,
+    estimatedPrepMinutes:
+      raw.estimatedPrepTime != null ? Number(raw.estimatedPrepTime) : undefined,
     estimated_time:
       raw.estimatedPrepTime != null
         ? `${raw.estimatedPrepTime} min`
         : raw.estimated_time,
+    etaReadyAt: raw.etaReadyAt ?? undefined,
+    etaDeliveredAt: raw.etaDeliveredAt ?? undefined,
+    confirmedAt: raw.confirmedAt ?? undefined,
     items: Array.isArray(raw.items) ? raw.items.map(mapLine) : [],
     customerName: raw.customerName,
     customerPhone: raw.customerPhone,

@@ -1,40 +1,62 @@
 import type { Order } from '../types/order.js'
+import { getOrderDeadlineMs, isPendingOrder } from './orderCountdown.js'
 
-export type OrderTab = 'new' | 'progress' | 'ready' | 'done' | 'scheduled'
+export type OrderTab = 'active' | 'transit' | 'done'
 
-const PROGRESS = new Set(['accepted', 'preparing', 'assigned', 'acknowledged'])
-const READY = new Set(['ready_for_pickup', 'ready'])
+const TRANSIT = new Set(['out_for_delivery', 'courier_assigned'])
 const DONE = new Set([
   'picked_up',
   'delivered',
   'completed',
-  'out_for_delivery',
   'rejected',
   'cancelled',
 ])
+const ACTIVE = new Set([
+  'pending',
+  'new',
+  'accepted',
+  'preparing',
+  'assigned',
+  'acknowledged',
+  'ready_for_pickup',
+  'ready',
+])
 
-export function isScheduledOrder(order: Order, now = Date.now()): boolean {
-  if (!order.scheduledFor) return false
-  const at = new Date(order.scheduledFor).getTime()
-  if (Number.isNaN(at)) return false
-  const pending = order.status === 'pending' || order.status === 'new'
-  return pending && at > now
-}
-
-export function bucketOrder(order: Order, now = Date.now()): OrderTab {
-  if (isScheduledOrder(order, now)) return 'scheduled'
+export function bucketOrder(order: Order): OrderTab {
   const status = order.status
-  if (status === 'pending' || status === 'new') return 'new'
-  if (PROGRESS.has(status)) return 'progress'
-  if (READY.has(status)) return 'ready'
+  if (isPendingOrder(order)) return 'active'
+  if (TRANSIT.has(status)) return 'transit'
   if (DONE.has(status)) return 'done'
+  if (ACTIVE.has(status)) return 'active'
   return 'done'
 }
 
-export const TAB_LABELS: Record<OrderTab, string> = {
-  new: 'Neu',
-  progress: 'In Arbeit',
-  ready: 'Fertig',
-  done: 'Erledigt',
-  scheduled: 'Geplant',
+export function sortActiveOrders(orders: Order[], now = Date.now()): Order[] {
+  return [...orders].sort((a, b) => {
+    const aPending = isPendingOrder(a)
+    const bPending = isPendingOrder(b)
+    if (aPending !== bPending) return aPending ? -1 : 1
+    if (aPending && bPending) {
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    }
+    return getOrderDeadlineMs(a, now) - getOrderDeadlineMs(b, now)
+  })
+}
+
+export function sortTransitOrders(orders: Order[], now = Date.now()): Order[] {
+  return [...orders].sort(
+    (a, b) => getOrderDeadlineMs(a, now) - getOrderDeadlineMs(b, now),
+  )
+}
+
+export function sortDoneOrders(orders: Order[]): Order[] {
+  return [...orders].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  )
+}
+
+export function sortOrdersForTab(orders: Order[], tab: OrderTab, now = Date.now()): Order[] {
+  if (tab === 'active') return sortActiveOrders(orders, now)
+  if (tab === 'transit') return sortTransitOrders(orders, now)
+  return sortDoneOrders(orders)
 }

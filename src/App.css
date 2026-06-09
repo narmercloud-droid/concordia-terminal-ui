@@ -544,6 +544,148 @@
   white-space: nowrap;
 }
 
+.menu-button {
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 12px;
+  background: #1e3a5f;
+  color: #ffffff;
+  font-size: 1.4rem;
+  cursor: pointer;
+}
+
+.header-brand {
+  flex: 1;
+}
+
+.side-menu-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 40;
+}
+
+.side-menu {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  inset-inline-start: 0;
+  width: min(320px, 85vw);
+  background: #ffffff;
+  padding: 24px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.2);
+}
+
+.side-menu h2 {
+  margin: 0;
+}
+
+.side-menu-btn,
+.side-menu-link,
+.side-menu-close {
+  width: 100%;
+  text-align: start;
+}
+
+.side-menu-link {
+  display: block;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #f3f4f6;
+  color: #111827;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.side-menu-section h3 {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  color: #6b7280;
+}
+
+.lang-toggle {
+  display: flex;
+  gap: 10px;
+}
+
+.lang-chip {
+  flex: 1;
+  border: 2px solid #d1d5db;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.lang-chip.active {
+  border-color: #1e3a5f;
+  background: #eff6ff;
+  color: #1e3a5f;
+}
+
+.countdown-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+.countdown-new {
+  background: #ff8000;
+  color: #ffffff;
+  animation: pulse-new 1.2s ease-in-out infinite;
+}
+
+.countdown-ok {
+  background: #1e3a5f;
+  color: #ffffff;
+}
+
+.countdown-overdue {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.order-card-pending {
+  border-color: #ff8000;
+  box-shadow: 0 0 0 3px rgba(255, 128, 0, 0.25);
+  animation: pulse-card 1.5s ease-in-out infinite;
+}
+
+.detail-countdown-row {
+  margin-bottom: 12px;
+}
+
+.stage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+@keyframes pulse-new {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+
+@keyframes pulse-card {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(255, 128, 0, 0.2); }
+  50% { box-shadow: 0 0 0 6px rgba(255, 128, 0, 0.35); }
+}
+
+[dir='rtl'] .order-card,
+[dir='rtl'] .detail-row,
+[dir='rtl'] .item-row {
+  text-align: right;
+}
+
 .modifier-heading {
   font-weight: 700;
   margin-bottom: 6px;

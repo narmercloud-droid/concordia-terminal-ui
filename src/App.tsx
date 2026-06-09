@@ -6,10 +6,12 @@ import DayReport from './pages/DayReport.js'
 import { Header } from './components/Header.js'
 import { ProtectedRoute } from './components/ProtectedRoute.js'
 import { useTerminalStore } from './store/terminalStore.js'
+import { useHardwareBack } from './hooks/useHardwareBack.js'
 import './App.css'
 
 function App() {
   const isAuthenticated = useTerminalStore((state) => state.isAuthenticated)
+  useHardwareBack('/orders')
 
   return (
     <div className="app-shell">

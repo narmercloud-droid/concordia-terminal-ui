@@ -29,4 +29,9 @@ export const ordersApi = {
     })
     return mapApiOrderDetails(unwrapData(response.data))
   },
+
+  updateStatus: async (order_id: string, status: string): Promise<OrderDetails> => {
+    const response = await http.post(`/api/terminal/orders/${order_id}/status`, { status })
+    return mapApiOrderDetails(unwrapData(response.data))
+  },
 }

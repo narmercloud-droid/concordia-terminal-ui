@@ -4,10 +4,14 @@ import { ordersApi } from '../api/orders.js'
 import { Loader } from '../components/Loader.js'
 import { ErrorMessage } from '../components/ErrorMessage.js'
 import { Toast } from '../components/Toast.js'
+import { CountdownBadge } from '../components/CountdownBadge.js'
 import type { OrderDetails as OrderDetailsType, OrderItem } from '../types/order.js'
 import { formatCurrency, formatDateTime } from '../utils/format.js'
 import { buildOrderTicket } from '../utils/orderTicket.js'
 import { printOnSunmi } from '../native/sunmiPrint.js'
+import { getCrossTabActions, getStageActions } from '../utils/orderStages.js'
+import { isPickup } from '../utils/orderCountdown.js'
+import { useI18n } from '../i18n/index.js'
 import '../App.css'
 
 const PREP_PRESETS_DELIVERY = [30, 45, 60, 75]
@@ -19,36 +23,38 @@ function defaultPrepMinutes(fulfillment?: string) {
   return 45
 }
 
-function fulfillmentLabel(type?: string) {
-  const t = (type ?? '').toLowerCase()
-  if (t.includes('pickup') || t.includes('abhol')) return 'Abholung'
-  if (t.includes('delivery') || t.includes('liefer')) return 'Lieferung'
-  return type ?? '—'
-}
-
-function paymentLabel(method?: string) {
-  const m = (method ?? 'cash').toLowerCase()
-  if (m === 'cod' || m === 'cash') return 'Bar'
-  if (m === 'card') return 'Karte'
-  if (m === 'paypal') return 'PayPal'
-  if (m === 'klarna') return 'Klarna'
-  return method ?? 'Bar'
-}
-
 const OrderDetails = () => {
   const { order_id } = useParams<{ order_id: string }>()
+  const t = useI18n((s) => s.t)
   const [order, setOrder] = useState<OrderDetailsType | null>(null)
   const [prepMinutes, setPrepMinutes] = useState(45)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [confirming, setConfirming] = useState(false)
   const [rejecting, setRejecting] = useState(false)
+  const [updating, setUpdating] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
   const navigate = useNavigate()
 
+  const paymentLabel = (method?: string) => {
+    const m = (method ?? 'cash').toLowerCase()
+    if (m === 'cod' || m === 'cash') return t('cash')
+    if (m === 'card') return t('card')
+    if (m === 'paypal') return t('paypal')
+    if (m === 'klarna') return t('klarna')
+    return method ?? t('cash')
+  }
+
+  const fulfillmentLabel = (type?: string) => {
+    const value = (type ?? '').toLowerCase()
+    if (value.includes('pickup') || value.includes('abhol')) return t('pickup')
+    if (value.includes('delivery') || value.includes('liefer')) return t('delivery')
+    return type ?? '—'
+  }
+
   useEffect(() => {
     if (!order_id) {
-      setError('Bestellung nicht gefunden')
+      setError(t('detailError'))
       setLoading(false)
       return
     }
@@ -61,7 +67,7 @@ const OrderDetails = () => {
         setOrder(response)
         setPrepMinutes(defaultPrepMinutes(response.delivery_type))
       } catch (err) {
-        setError('Bestelldetails konnten nicht geladen werden.')
+        setError(t('detailError'))
         console.error(err)
       } finally {
         setLoading(false)
@@ -69,14 +75,16 @@ const OrderDetails = () => {
     }
 
     loadOrder()
-  }, [order_id])
+  }, [order_id, t])
 
   const isPending = order?.status === 'pending' || order?.status === 'new'
   const prepPresets = useMemo(() => {
-    const t = (order?.delivery_type ?? '').toLowerCase()
-    if (t.includes('pickup') || t.includes('abhol')) return PREP_PRESETS_PICKUP
-    return PREP_PRESETS_DELIVERY
-  }, [order?.delivery_type])
+    if (!order) return PREP_PRESETS_DELIVERY
+    return isPickup(order) ? PREP_PRESETS_PICKUP : PREP_PRESETS_DELIVERY
+  }, [order])
+
+  const stageActions = order ? getStageActions(order) : []
+  const crossActions = order ? getCrossTabActions(order) : []
 
   const handleConfirm = async () => {
     if (!order_id || !order || !isPending) return
@@ -85,23 +93,17 @@ const OrderDetails = () => {
     try {
       const confirmed = await ordersApi.confirmOrder(order_id, prepMinutes)
       const ticket = buildOrderTicket(confirmed, prepMinutes)
-      const printed = await printOnSunmi(ticket)
+      const printResult = await printOnSunmi(ticket)
       setToastMessage(
-        printed
-          ? 'Bestellung angenommen und gedruckt.'
-          : 'Bestellung angenommen. Druck fehlgeschlagen — Küche prüfen.',
+        printResult.ok ? t('acceptedPrinted') : `${t('acceptedNoPrint')} ${printResult.error ?? ''}`,
       )
       window.setTimeout(() => {
         navigate('/orders', {
-          state: {
-            toast: printed
-              ? 'Bestellung bestätigt und Bon gedruckt.'
-              : 'Bestellung bestätigt (Druck fehlgeschlagen).',
-          },
+          state: { toast: printResult.ok ? t('acceptedPrinted') : t('acceptedNoPrint') },
         })
       }, 900)
     } catch (err) {
-      setError('Bestätigung fehlgeschlagen. Zubereitungszeit 5–180 Min. prüfen.')
+      setError(t('confirmError'))
       console.error(err)
     } finally {
       setConfirming(false)
@@ -110,25 +112,41 @@ const OrderDetails = () => {
 
   const handleReject = async () => {
     if (!order_id || !isPending) return
-    const reason = window.prompt('Ablehnungsgrund (optional):') ?? ''
+    const reason = window.prompt(t('rejectPrompt')) ?? ''
     setRejecting(true)
     setError('')
     try {
       await ordersApi.rejectOrder(order_id, reason || undefined)
-      navigate('/orders', { state: { toast: 'Bestellung abgelehnt.' } })
+      navigate('/orders', { state: { toast: t('rejected') } })
     } catch (err) {
-      setError('Bestellung konnte nicht abgelehnt werden.')
+      setError(t('rejectError'))
       console.error(err)
     } finally {
       setRejecting(false)
     }
   }
 
+  const handleStatus = async (status: string) => {
+    if (!order_id) return
+    setUpdating(true)
+    setError('')
+    try {
+      const updated = await ordersApi.updateStatus(order_id, status)
+      setOrder(updated)
+      setToastMessage(updated.status)
+    } catch (err) {
+      setError('Status update failed')
+      console.error(err)
+    } finally {
+      setUpdating(false)
+    }
+  }
+
   const handleReprint = async () => {
     if (!order) return
-    const ticket = buildOrderTicket(order, order.estimated_time ? Number.parseInt(order.estimated_time, 10) : undefined)
-    const printed = await printOnSunmi(ticket)
-    setToastMessage(printed ? 'Bon erneut gedruckt.' : 'Druck fehlgeschlagen.')
+    const ticket = buildOrderTicket(order, order.estimatedPrepMinutes)
+    const printResult = await printOnSunmi(ticket)
+    setToastMessage(printResult.ok ? t('reprinted') : `${t('printFailed')}: ${printResult.error ?? ''}`)
   }
 
   const renderItem = (item: OrderItem) => (
@@ -151,7 +169,7 @@ const OrderDetails = () => {
           ))}
         </div>
       ) : null}
-      {item.notes ? <div className="item-note">Hinweis: {item.notes}</div> : null}
+      {item.notes ? <div className="item-note">{t('note')}: {item.notes}</div> : null}
     </div>
   )
 
@@ -159,8 +177,8 @@ const OrderDetails = () => {
     <div className="page-shell terminal-page">
       <div className="panel detail-panel">
         <div className="panel-header">
-          <h1>Bestelldetails</h1>
-          <p>Artikel prüfen, Zeit wählen, annehmen oder ablehnen.</p>
+          <h1>{t('orderDetailTitle')}</h1>
+          <p>{t('orderDetailSubtitle')}</p>
         </div>
 
         {loading ? (
@@ -171,74 +189,66 @@ const OrderDetails = () => {
           <>
             {toastMessage && <Toast visible message={toastMessage} onClose={() => setToastMessage('')} />}
 
+            <div className="detail-countdown-row">
+              <CountdownBadge order={order} />
+            </div>
+
             <section className="detail-section">
               <div className="detail-row">
-                <span>Bestellung</span>
-                <strong>#{order.order_id.slice(0, 8).toUpperCase()}</strong>
+                <span>#</span>
+                <strong>{order.order_id.slice(0, 8).toUpperCase()}</strong>
               </div>
               <div className="detail-row">
-                <span>Eingang</span>
-                <strong>{formatDateTime(order.createdAt)}</strong>
-              </div>
-              {order.scheduledFor ? (
-                <div className="detail-row">
-                  <span>Geplant für</span>
-                  <strong>{formatDateTime(order.scheduledFor)}</strong>
-                </div>
-              ) : null}
-              <div className="detail-row">
-                <span>Kunde</span>
-                <strong>{order.customerName ?? 'Gast'}</strong>
+                <span>{t('status')}</span>
+                <strong>{order.status}</strong>
               </div>
               <div className="detail-row">
-                <span>Telefon</span>
-                <strong>{order.customerPhone ?? '—'}</strong>
+                <span>{t('guest')}</span>
+                <strong>{order.customerName ?? t('guest')}</strong>
               </div>
               <div className="detail-row">
-                <span>Art</span>
+                <span>{t('delivery')}</span>
                 <strong>{fulfillmentLabel(order.delivery_type)}</strong>
               </div>
               <div className="detail-row">
-                <span>Zahlung</span>
+                <span>{t('payment')}</span>
                 <strong>{paymentLabel(order.paymentMethod)}</strong>
               </div>
+              {order.scheduledFor ? (
+                <div className="detail-row">
+                  <span>{t('scheduled')}</span>
+                  <strong>{formatDateTime(order.scheduledFor)}</strong>
+                </div>
+              ) : null}
               {order.deliveryAddress ? (
                 <div className="detail-row">
-                  <span>Adresse</span>
+                  <span>{t('address')}</span>
                   <strong>{order.deliveryAddress}</strong>
                 </div>
               ) : null}
               {order.notes ? (
                 <div className="detail-row">
-                  <span>Hinweis</span>
+                  <span>{t('note')}</span>
                   <strong>{order.notes}</strong>
                 </div>
               ) : null}
-              <div className="detail-row">
-                <span>Status</span>
-                <strong>{order.status}</strong>
-              </div>
             </section>
 
             <section className="items-section">
-              <h2>Artikel</h2>
-              {order.items.length === 0 ? (
-                <p className="empty-state">Keine Artikel.</p>
-              ) : (
-                order.items.map(renderItem)
-              )}
+              <h2>{t('items')}</h2>
+              {order.items.map(renderItem)}
             </section>
 
             <section className="summary-section">
               <div className="summary-row">
-                <span>Gesamt</span>
+                <span>{t('total')}</span>
                 <strong>{formatCurrency(order.total)}</strong>
               </div>
             </section>
 
             {isPending ? (
               <section className="detail-section">
-                <h2>Zubereitungszeit</h2>
+                <h2>{t('prepTime')}</h2>
                 <div className="prep-presets">
                   {prepPresets.map((mins) => (
                     <button
@@ -247,11 +257,10 @@ const OrderDetails = () => {
                       className={`prep-chip ${prepMinutes === mins ? 'active' : ''}`}
                       onClick={() => setPrepMinutes(mins)}
                     >
-                      {mins} Min
+                      {mins} {t('minutes')}
                     </button>
                   ))}
                 </div>
-                <label htmlFor="prep_minutes">Oder manuell (5–180 Min.)</label>
                 <input
                   id="prep_minutes"
                   type="number"
@@ -263,40 +272,44 @@ const OrderDetails = () => {
               </section>
             ) : null}
 
+            {!isPending && (stageActions.length > 0 || crossActions.length > 0) ? (
+              <section className="detail-section stage-actions">
+                {[...stageActions, ...crossActions].map((action) => (
+                  <button
+                    key={`${action.status}-${action.labelKey}`}
+                    type="button"
+                    className="button secondary"
+                    disabled={updating}
+                    onClick={() => handleStatus(action.status)}
+                  >
+                    {t(action.labelKey)}
+                  </button>
+                ))}
+              </section>
+            ) : null}
+
             <div className="action-group">
               <button className="button secondary" type="button" onClick={() => navigate('/orders')}>
-                Zurück
+                {t('back')}
               </button>
               {!isPending ? (
                 <button className="button tertiary" type="button" onClick={handleReprint}>
-                  Bon drucken
+                  {t('reprint')}
                 </button>
               ) : null}
               {isPending ? (
                 <>
-                  <button
-                    className="button danger"
-                    type="button"
-                    onClick={handleReject}
-                    disabled={rejecting}
-                  >
-                    {rejecting ? 'Wird abgelehnt…' : 'Ablehnen'}
+                  <button className="button danger" type="button" onClick={handleReject} disabled={rejecting}>
+                    {rejecting ? t('rejecting') : t('reject')}
                   </button>
-                  <button
-                    className="button primary"
-                    type="button"
-                    onClick={handleConfirm}
-                    disabled={confirming}
-                  >
-                    {confirming ? 'Wird angenommen…' : 'Annehmen & Drucken'}
+                  <button className="button primary" type="button" onClick={handleConfirm} disabled={confirming}>
+                    {confirming ? t('confirming') : t('acceptPrint')}
                   </button>
                 </>
               ) : null}
             </div>
           </>
-        ) : (
-          <p>Bestellung nicht verfügbar.</p>
-        )}
+        ) : null}
       </div>
     </div>
   )
