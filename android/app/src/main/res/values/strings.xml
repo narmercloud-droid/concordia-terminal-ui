@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Concordia Terminal</string>
+    <string name="title_activity_main">Concordia Terminal</string>
+    <string name="package_name">de.concordia.terminal</string>
+    <string name="custom_url_scheme">de.concordia.terminal</string>
+</resources>
