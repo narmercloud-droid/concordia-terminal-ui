@@ -82,9 +82,9 @@ const Orders = () => {
       }
     }
     load()
-    const timer = window.setInterval(load, 30_000)
+    const timer = window.setInterval(load, connected ? 60_000 : 25_000)
     return () => window.clearInterval(timer)
-  }, [branch_id, loadOrders, t])
+  }, [branch_id, loadOrders, t, connected])
 
   return (
     <div className="page-shell terminal-page">

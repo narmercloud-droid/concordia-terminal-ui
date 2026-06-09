@@ -55,6 +55,11 @@ export const useSocket = ({ enabled = false }: Options = {}) => {
       }
       if (payload.order) {
         useOrderStore.getState().upsertOrder(mapApiOrder(payload.order))
+        return
+      }
+      const existing = useOrderStore.getState().orders.find((o) => o.order_id === String(id))
+      if (existing && payload.status) {
+        useOrderStore.getState().upsertOrder({ ...existing, status: payload.status })
       }
     }
 

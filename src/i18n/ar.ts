@@ -37,6 +37,7 @@ export const ar: Record<TranslationKey, string> = {
   detailError: 'تعذر تحميل تفاصيل الطلب.',
   confirmError: 'فشل التأكيد. تحقق من وقت التحضير (5–180 د).',
   rejectError: 'تعذر رفض الطلب.',
+  statusUpdateFailed: 'تعذر تحديث الحالة.',
   acceptedPrinted: 'تم قبول الطلب وطباعته.',
   acceptedNoPrint: 'تم القبول. فشلت الطباعة.',
   rejected: 'تم رفض الطلب.',

@@ -8,10 +8,12 @@ import { CountdownBadge } from '../components/CountdownBadge.js'
 import type { OrderDetails as OrderDetailsType, OrderItem } from '../types/order.js'
 import { formatCurrency, formatDateTime } from '../utils/format.js'
 import { buildOrderTicket } from '../utils/orderTicket.js'
-import { printOnSunmi } from '../native/sunmiPrint.js'
-import { getCrossTabActions, getStageActions } from '../utils/orderStages.js'
+import { printOnDevice } from '../native/devicePrint.js'
+import { getStageActions } from '../utils/orderStages.js'
+import { getApiErrorMessage } from '../lib/apiErrors.js'
 import { isPickup } from '../utils/orderCountdown.js'
 import { useI18n } from '../i18n/index.js'
+import { useOrderStore } from '../store/orderStore.js'
 import '../App.css'
 
 const PREP_PRESETS_DELIVERY = [30, 45, 60, 75]
@@ -84,7 +86,6 @@ const OrderDetails = () => {
   }, [order])
 
   const stageActions = order ? getStageActions(order) : []
-  const crossActions = order ? getCrossTabActions(order) : []
 
   const handleConfirm = async () => {
     if (!order_id || !order || !isPending) return
@@ -93,7 +94,7 @@ const OrderDetails = () => {
     try {
       const confirmed = await ordersApi.confirmOrder(order_id, prepMinutes)
       const ticket = buildOrderTicket(confirmed, prepMinutes)
-      const printResult = await printOnSunmi(ticket)
+      const printResult = await printOnDevice(ticket)
       setToastMessage(
         printResult.ok ? t('acceptedPrinted') : `${t('acceptedNoPrint')} ${printResult.error ?? ''}`,
       )
@@ -133,9 +134,10 @@ const OrderDetails = () => {
     try {
       const updated = await ordersApi.updateStatus(order_id, status)
       setOrder(updated)
+      useOrderStore.getState().upsertOrder(updated)
       setToastMessage(updated.status)
     } catch (err) {
-      setError('Status update failed')
+      setError(getApiErrorMessage(err) ?? t('statusUpdateFailed'))
       console.error(err)
     } finally {
       setUpdating(false)
@@ -145,7 +147,7 @@ const OrderDetails = () => {
   const handleReprint = async () => {
     if (!order) return
     const ticket = buildOrderTicket(order, order.estimatedPrepMinutes)
-    const printResult = await printOnSunmi(ticket)
+    const printResult = await printOnDevice(ticket)
     setToastMessage(printResult.ok ? t('reprinted') : `${t('printFailed')}: ${printResult.error ?? ''}`)
   }
 
@@ -272,9 +274,9 @@ const OrderDetails = () => {
               </section>
             ) : null}
 
-            {!isPending && (stageActions.length > 0 || crossActions.length > 0) ? (
+            {!isPending && stageActions.length > 0 ? (
               <section className="detail-section stage-actions">
-                {[...stageActions, ...crossActions].map((action) => (
+                {stageActions.map((action) => (
                   <button
                     key={`${action.status}-${action.labelKey}`}
                     type="button"

@@ -57,7 +57,7 @@ export function startPendingAlertLoop(hasPending: () => boolean) {
     if (hasPending()) {
       playUrgentPendingTone()
     }
-  }, 12_000)
+  }, 15_000)
 }
 
 export function stopPendingAlertLoop() {

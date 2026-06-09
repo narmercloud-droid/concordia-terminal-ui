@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import type { Order } from '../types/order.js'
 import { formatCurrency } from '../utils/format.js'
 import { isPendingOrder } from '../utils/orderCountdown.js'
@@ -10,7 +10,7 @@ interface OrderCardProps {
   onClick: () => void
 }
 
-export const OrderCard = ({ order, onClick }: OrderCardProps) => {
+export const OrderCard = memo(function OrderCard({ order, onClick }: OrderCardProps) {
   const t = useI18n((s) => s.t)
   const pending = isPendingOrder(order)
 
@@ -58,4 +58,4 @@ export const OrderCard = ({ order, onClick }: OrderCardProps) => {
       </div>
     </button>
   )
-}
+})

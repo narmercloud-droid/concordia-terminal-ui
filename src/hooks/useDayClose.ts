@@ -1,9 +1,9 @@
 import { dailyReportApi } from '../api/dailyReport.js'
-import { printOnSunmi } from '../native/sunmiPrint.js'
+import { printOnDevice } from '../native/devicePrint.js'
 
 export async function printDayReport(): Promise<{ ok: boolean; message: string }> {
   const report = await dailyReportApi.getToday()
-  const printed = await printOnSunmi(report.receiptText)
+  const printed = await printOnDevice(report.receiptText)
   if (printed.ok) {
     return { ok: true, message: 'Tagesabschluss gedruckt.' }
   }

@@ -35,6 +35,7 @@ export const de = {
   detailError: 'Bestelldetails konnten nicht geladen werden.',
   confirmError: 'Bestätigung fehlgeschlagen. Zubereitungszeit 5–180 Min. prüfen.',
   rejectError: 'Bestellung konnte nicht abgelehnt werden.',
+  statusUpdateFailed: 'Status konnte nicht aktualisiert werden.',
   acceptedPrinted: 'Bestellung angenommen und gedruckt.',
   acceptedNoPrint: 'Bestellung angenommen. Druck fehlgeschlagen.',
   rejected: 'Bestellung abgelehnt.',
