@@ -10,6 +10,11 @@ export interface StageAction {
 const DONE = new Set(['delivered', 'completed', 'picked_up', 'rejected', 'cancelled'])
 const TRANSIT = new Set(['out_for_delivery', 'courier_assigned'])
 
+export function getPrimaryStageAction(order: Order): StageAction | null {
+  const actions = getStageActions(order)
+  return actions[0] ?? null
+}
+
 export function getStageActions(order: Order): StageAction[] {
   const status = order.status
   const pickup = isPickup(order)

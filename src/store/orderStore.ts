@@ -17,7 +17,15 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   loadOrders: async (branchId) => {
     if (!branchId) return
     const orders = (await ordersApi.getOrders(branchId)).filter((o) => isBerlinToday(o.createdAt))
-    set({ orders })
+    set((state) => {
+      if (
+        state.orders.length === orders.length &&
+        state.orders.every((o, i) => o.order_id === orders[i]?.order_id && o.status === orders[i]?.status)
+      ) {
+        return state
+      }
+      return { orders }
+    })
   },
 
   upsertOrder: (order) => {

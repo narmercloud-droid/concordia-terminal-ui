@@ -7,13 +7,16 @@ import { Toast } from '../components/Toast.js'
 import { CountdownBadge } from '../components/CountdownBadge.js'
 import type { OrderDetails as OrderDetailsType, OrderItem } from '../types/order.js'
 import { formatCurrency, formatDateTime } from '../utils/format.js'
-import { buildOrderTicket } from '../utils/orderTicket.js'
-import { printOnDevice } from '../native/devicePrint.js'
+import { buildOrderReceipt } from '../utils/orderTicket.js'
+import { printOrderReceipt } from '../native/devicePrint.js'
 import { getStageActions } from '../utils/orderStages.js'
+import type { StageAction } from '../utils/orderStages.js'
 import { getApiErrorMessage } from '../lib/apiErrors.js'
 import { isPickup } from '../utils/orderCountdown.js'
 import { useI18n } from '../i18n/index.js'
-import { useOrderStore } from '../store/orderStore.js'
+import { useTerminalStore } from '../store/terminalStore.js'
+import { useOrderStatusUpdate } from '../hooks/useOrderStatusUpdate.js'
+import { getStatusLabelKey, orderShortId } from '../utils/orderDisplay.js'
 import '../App.css'
 
 const PREP_PRESETS_DELIVERY = [30, 45, 60, 75]
@@ -34,9 +37,9 @@ const OrderDetails = () => {
   const [error, setError] = useState('')
   const [confirming, setConfirming] = useState(false)
   const [rejecting, setRejecting] = useState(false)
-  const [updating, setUpdating] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
   const navigate = useNavigate()
+  const { updateWithAction, isUpdating } = useOrderStatusUpdate()
 
   const paymentLabel = (method?: string) => {
     const m = (method ?? 'cash').toLowerCase()
@@ -93,8 +96,9 @@ const OrderDetails = () => {
     setError('')
     try {
       const confirmed = await ordersApi.confirmOrder(order_id, prepMinutes)
-      const ticket = buildOrderTicket(confirmed, prepMinutes)
-      const printResult = await printOnDevice(ticket)
+      const branchName = useTerminalStore.getState().branch_name
+      const receipt = buildOrderReceipt(confirmed, prepMinutes, { branchName })
+      const printResult = await printOrderReceipt(receipt)
       setToastMessage(
         printResult.ok ? t('acceptedPrinted') : `${t('acceptedNoPrint')} ${printResult.error ?? ''}`,
       )
@@ -127,27 +131,22 @@ const OrderDetails = () => {
     }
   }
 
-  const handleStatus = async (status: string) => {
+  const handleStatus = async (action: StageAction) => {
     if (!order_id) return
-    setUpdating(true)
     setError('')
     try {
-      const updated = await ordersApi.updateStatus(order_id, status)
-      setOrder(updated)
-      useOrderStore.getState().upsertOrder(updated)
-      setToastMessage(updated.status)
+      await updateWithAction(order_id, action)
     } catch (err) {
       setError(getApiErrorMessage(err) ?? t('statusUpdateFailed'))
       console.error(err)
-    } finally {
-      setUpdating(false)
     }
   }
 
   const handleReprint = async () => {
     if (!order) return
-    const ticket = buildOrderTicket(order, order.estimatedPrepMinutes)
-    const printResult = await printOnDevice(ticket)
+    const branchName = useTerminalStore.getState().branch_name
+    const receipt = buildOrderReceipt(order, order.estimatedPrepMinutes, { branchName })
+    const printResult = await printOrderReceipt(receipt)
     setToastMessage(printResult.ok ? t('reprinted') : `${t('printFailed')}: ${printResult.error ?? ''}`)
   }
 
@@ -198,11 +197,11 @@ const OrderDetails = () => {
             <section className="detail-section">
               <div className="detail-row">
                 <span>#</span>
-                <strong>{order.order_id.slice(0, 8).toUpperCase()}</strong>
+                <strong>#{orderShortId(order.order_id)}</strong>
               </div>
               <div className="detail-row">
                 <span>{t('status')}</span>
-                <strong>{order.status}</strong>
+                <strong>{t(getStatusLabelKey(order.status))}</strong>
               </div>
               <div className="detail-row">
                 <span>{t('guest')}</span>
@@ -280,9 +279,9 @@ const OrderDetails = () => {
                   <button
                     key={`${action.status}-${action.labelKey}`}
                     type="button"
-                    className="button secondary"
-                    disabled={updating}
-                    onClick={() => handleStatus(action.status)}
+                    className="button primary stage-action-btn"
+                    disabled={isUpdating}
+                    onClick={() => handleStatus(action)}
                   >
                     {t(action.labelKey)}
                   </button>

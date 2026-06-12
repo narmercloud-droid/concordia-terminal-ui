@@ -81,16 +81,18 @@ public class KingtopPrintPlugin extends Plugin {
     }
 
     private Object createHandler(Context context, Class<?> handlerCls) throws Exception {
+        // Match legacy Imagpay demo: MposHandler.getInstance(context) first
         try {
-            Object instance = invokeStaticNoArg(handlerCls, "getInstance");
+            Method getInstance = handlerCls.getMethod("getInstance", Context.class);
+            Object instance = getInstance.invoke(null, context);
             if (instance != null) return instance;
         } catch (NoSuchMethodException ignored) {
             // fall through
         }
 
         try {
-            Method getInstance = handlerCls.getMethod("getInstance", Context.class);
-            return getInstance.invoke(null, context);
+            Object instance = invokeStaticNoArg(handlerCls, "getInstance");
+            if (instance != null) return instance;
         } catch (NoSuchMethodException ignored) {
             // fall through
         }
@@ -126,12 +128,16 @@ public class KingtopPrintPlugin extends Plugin {
             // optional on some firmware builds
         }
 
+        // Z90/Z91 SDK notes: wait before serial connect
+        Thread.sleep(1000);
+
         Method isConnected = handlerClass.getMethod("isConnected");
         boolean connected = Boolean.TRUE.equals(isConnected.invoke(handler));
         if (!connected) {
             Method connect = handlerClass.getMethod("connect");
             Object connectResult = connect.invoke(handler);
             Log.i(TAG, "connect() => " + String.valueOf(connectResult));
+            Thread.sleep(300);
         }
     }
 
@@ -174,22 +180,16 @@ public class KingtopPrintPlugin extends Plugin {
     }
 
     private boolean tryPrintWithPrnStr(String text) throws Exception {
-        Method prnStr = settingsClass.getMethod("prnStr", String.class);
-        prnStr.invoke(settings, text);
-
+        // Legacy demo: single prnStr then prnStart
         try {
+            Method prnStr = settingsClass.getMethod("prnStr", String.class);
+            prnStr.invoke(settings, text);
             Method prnStart = settingsClass.getMethod("prnStart");
             prnStart.invoke(settings);
             return true;
-        } catch (NoSuchMethodException ignored) {
-            // Some builds only expose mPosExitPrint after buffered prnStr calls.
-        }
-
-        try {
-            Method exitPrint = settingsClass.getMethod("mPosExitPrint");
-            exitPrint.invoke(settings);
-            return true;
-        } catch (NoSuchMethodException ignored) {
+        } catch (NoSuchMethodException e) {
+            Method prnStr = settingsClass.getMethod("prnStr", String.class);
+            prnStr.invoke(settings, text);
             return true;
         }
     }

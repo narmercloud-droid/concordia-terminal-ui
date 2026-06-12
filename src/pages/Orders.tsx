@@ -11,7 +11,11 @@ import {
   sortOrdersForTab,
   type OrderTab,
 } from '../utils/orderBuckets.js'
+import { getPrimaryStageAction } from '../utils/orderStages.js'
+import { useOrderStatusUpdate } from '../hooks/useOrderStatusUpdate.js'
+import { getApiErrorMessage } from '../lib/apiErrors.js'
 import { useI18n } from '../i18n/index.js'
+import type { Order } from '../types/order.js'
 import '../App.css'
 
 const TABS: OrderTab[] = ['active', 'transit', 'done']
@@ -20,7 +24,6 @@ const Orders = () => {
   const orders = useOrderStore((state) => state.orders)
   const loadOrders = useOrderStore((state) => state.loadOrders)
   const branch_id = useTerminalStore((state) => state.branch_id)
-  const branch_name = useTerminalStore((state) => state.branch_name)
   const ordersPaused = useTerminalStore((state) => state.ordersPaused)
   const t = useI18n((s) => s.t)
   const [activeTab, setActiveTab] = useState<OrderTab>('active')
@@ -31,6 +34,7 @@ const Orders = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const { connected } = useSocket({ enabled: true })
+  const { updateWithAction, updatingId } = useOrderStatusUpdate()
 
   const tabLabels: Record<OrderTab, string> = {
     active: t('tabActive'),
@@ -61,9 +65,13 @@ const Orders = () => {
   }, [])
 
   useEffect(() => {
-    const toast = (location.state as { toast?: string } | null)?.toast
-    if (toast) setToastMessage(toast)
-  }, [location.state])
+    const state = location.state as { toast?: string; activeTab?: OrderTab } | null
+    if (state?.toast) setToastMessage(state.toast)
+    if (state?.activeTab) setActiveTab(state.activeTab)
+    if (state?.toast || state?.activeTab) {
+      navigate(location.pathname, { replace: true, state: null })
+    }
+  }, [location.state, location.pathname, navigate])
 
   useEffect(() => {
     if (!branch_id) return
@@ -80,16 +88,29 @@ const Orders = () => {
       }
     }
     load()
-    const timer = window.setInterval(load, connected ? 60_000 : 25_000)
+    const timer = window.setInterval(load, connected ? 300_000 : 90_000)
     return () => window.clearInterval(timer)
   }, [branch_id, loadOrders, t, connected])
 
+  const handleQuickStatus = async (order: Order) => {
+    const action = getPrimaryStageAction(order)
+    if (!action) return
+    setError('')
+    try {
+      const updated = await updateWithAction(order.order_id, action, false)
+      if (updated) {
+        setToastMessage(t(action.labelKey))
+        setActiveTab(bucketOrder(updated))
+      }
+    } catch (err) {
+      setError(getApiErrorMessage(err) ?? t('statusUpdateFailed'))
+      console.error(err)
+    }
+  }
+
   return (
     <div className="page-shell terminal-page">
-      <div className="terminal-hero">
-        <h1>{branch_name || t('orders')}</h1>
-        {ordersPaused ? <div className="pause-banner">{t('ordersPaused')}</div> : null}
-      </div>
+      {ordersPaused ? <div className="pause-banner">{t('ordersPaused')}</div> : null}
 
       {toastMessage && <Toast visible message={toastMessage} onClose={() => setToastMessage('')} />}
 
@@ -104,7 +125,7 @@ const Orders = () => {
             onClick={() => setActiveTab(tab)}
           >
             {tabLabels[tab]}
-            <span className="tab-count">{tabCounts[tab]}</span>
+            {tabCounts[tab] > 0 ? ` (${tabCounts[tab]})` : ''}
           </button>
         ))}
       </div>
@@ -116,12 +137,15 @@ const Orders = () => {
       ) : filteredOrders.length === 0 ? (
         <p className="empty-state tab-empty">{t('emptyTab', { tab: tabLabels[activeTab] })}</p>
       ) : (
-        <div className="orders-grid terminal-grid">
+        <div className="orders-list">
           {filteredOrders.map((order) => (
             <OrderCard
               key={order.order_id}
               order={order}
+              showTimer={activeTab !== 'done'}
               onClick={() => navigate(`/orders/${order.order_id}`)}
+              onQuickStatus={() => handleQuickStatus(order)}
+              quickStatusBusy={updatingId === order.order_id}
             />
           ))}
         </div>

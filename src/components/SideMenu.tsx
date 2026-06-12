@@ -3,7 +3,88 @@ import { NavLink } from 'react-router-dom'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { useI18n, type Language } from '../i18n/index.js'
 import { getApiErrorMessage } from '../lib/apiErrors.js'
+import {
+  getNetworkPrinterSettings,
+  saveNetworkPrinterSettings,
+  type NetworkPrinterSettings,
+} from '../lib/printerSettings.js'
+import { getPrinterDiagnostics, printOnDevice } from '../native/devicePrint.js'
 import '../App.css'
+
+function PrinterSettingsForm() {
+  const t = useI18n((s) => s.t)
+  const [settings, setSettings] = useState<NetworkPrinterSettings>(() => getNetworkPrinterSettings())
+  const [saved, setSaved] = useState(false)
+  const [testResult, setTestResult] = useState('')
+  const [diag, setDiag] = useState('')
+
+  useEffect(() => {
+    getPrinterDiagnostics().then((d) => {
+      const z = d.zcs
+      const k = d.kingtop
+      setDiag(
+        `ZCS (Z91): ${z.driverManagerFound ? 'DriverManager found' : 'not found'}\n` +
+          `${z.available ? 'ZCS printer OK' : z.lastError || 'ZCS not ready'}\n` +
+          `Imagpay: ${k.handlerClassesFound}\n` +
+          `${k.available ? `OK (${k.initPath})` : k.lastError || 'not used'}`,
+      )
+    })
+  }, [])
+
+  const save = () => {
+    saveNetworkPrinterSettings(settings)
+    setSaved(true)
+    window.setTimeout(() => setSaved(false), 2500)
+  }
+
+  const testPrint = async () => {
+    saveNetworkPrinterSettings(settings)
+    setTestResult(t('printerTesting'))
+    const result = await printOnDevice('CONCORDIA TESTDRUCK\n\nDrucker OK.\n')
+    setTestResult(result.ok ? t('printerTestOk') : `${t('printerTestFail')}: ${result.error ?? ''}`)
+  }
+
+  return (
+    <div className="printer-settings-form">
+      <label className="printer-settings-row">
+        <input
+          type="checkbox"
+          checked={settings.enabled}
+          onChange={(e) => setSettings((s) => ({ ...s, enabled: e.target.checked }))}
+        />
+        <span>{t('printerNetworkEnabled')}</span>
+      </label>
+      <label className="printer-settings-field">
+        <span>{t('printerIp')}</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          placeholder="192.168.1.100"
+          value={settings.host}
+          onChange={(e) => setSettings((s) => ({ ...s, host: e.target.value.trim() }))}
+        />
+      </label>
+      <label className="printer-settings-field">
+        <span>{t('printerPort')}</span>
+        <input
+          type="number"
+          min={1}
+          max={65535}
+          value={settings.port}
+          onChange={(e) => setSettings((s) => ({ ...s, port: Number(e.target.value) || 9100 }))}
+        />
+      </label>
+      <button type="button" className="button secondary side-menu-btn" onClick={save}>
+        {saved ? t('printerSaved') : t('printerSave')}
+      </button>
+      <button type="button" className="button tertiary side-menu-btn" onClick={testPrint}>
+        {t('printerTest')}
+      </button>
+      {testResult ? <p className="side-menu-feedback">{testResult}</p> : null}
+      {diag ? <pre className="printer-diag">{diag}</pre> : null}
+    </div>
+  )
+}
 
 interface SideMenuProps {
   open: boolean
@@ -75,6 +156,12 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
         <NavLink to="/day-report" className="side-menu-link" onClick={onClose}>
           {t('dayReport')}
         </NavLink>
+
+        <section className="side-menu-section">
+          <h3>{t('printerSettings')}</h3>
+          <p className="side-menu-hint">{t('printerSettingsHint')}</p>
+          <PrinterSettingsForm />
+        </section>
 
         <section className="side-menu-section">
           <h3>{t('language')}</h3>
