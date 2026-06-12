@@ -21,25 +21,20 @@ const KingtopPrint = registerPlugin<DevicePrintPlugin>('KingtopPrint')
 
 
 export async function printOnDevice(text: string): Promise<{ ok: boolean; error?: string; driver?: string }> {
+  let kingtopReason = ''
 
   try {
-
     const kingtop = await KingtopPrint.isAvailable()
-
-    if (kingtop.available) {
-
-      await KingtopPrint.printText({ text })
-
-      return { ok: true, driver: 'kingtop' }
-
+    if (!kingtop.available && kingtop.reason) {
+      kingtopReason = kingtop.reason
     }
-
+    if (kingtop.available) {
+      await KingtopPrint.printText({ text })
+      return { ok: true, driver: 'kingtop' }
+    }
   } catch (err) {
-
     const message = err instanceof Error ? err.message : 'Kingtop print failed'
-
     return { ok: false, error: message, driver: 'kingtop' }
-
   }
 
 
@@ -67,6 +62,9 @@ export async function printOnDevice(text: string): Promise<{ ok: boolean; error?
 
 
   let detail = 'No supported built-in printer found (Kingtop Z91 or Sunmi).'
+  if (kingtopReason) {
+    detail += ` Kingtop: ${kingtopReason}.`
+  }
   try {
     if (KingtopPrint.getDiagnostics) {
       const diag = await KingtopPrint.getDiagnostics()

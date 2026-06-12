@@ -13,6 +13,12 @@
 -keep class com.sunmi.peripheral.printer.** { *; }
 -dontwarn com.sunmi.**
 
+# Imagpay / ZCS Kingtop printer SDK (loaded via reflection on device)
+-keep class com.imagpay.** { *; }
+-keep class com.zcs.sdk.** { *; }
+-dontwarn com.imagpay.**
+-dontwarn com.zcs.sdk.**
+
 # Vendor printer SDKs are loaded via reflection on the device — do not strip our plugin
 -keepclassmembers class * {
     public <init>(...);
