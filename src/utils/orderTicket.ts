@@ -193,7 +193,8 @@ export function buildOrderReceipt(
   const lines: string[] = [
     center(branch),
     `${LARGE}${pickup ? 'ABHOLUNG' : 'LIEFERUNG'}`,
-    center(`Fällig: ${due.dueDate}, so bald als möglich`),
+    center(`Fällig: ${due.dueDate}`),
+    center('so bald als möglich'),
     `${XL}${due.time}`,
     `${LARGE}${formatReceiptOrderId(order.order_id)}`,
   ]

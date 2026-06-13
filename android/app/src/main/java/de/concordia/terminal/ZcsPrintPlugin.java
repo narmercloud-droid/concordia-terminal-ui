@@ -61,15 +61,34 @@ public class ZcsPrintPlugin extends Plugin {
         Field jniField = printerClass.getDeclaredField("g");
         jniField.setAccessible(true);
         Object jni = jniField.get(null);
-        if (jni == null) return;
+        if (jni == null) {
+            throw new IllegalStateException("SmartPosJni not ready");
+        }
 
         Method sysInit = jni.getClass().getMethod("sdkSysInit");
         int code = (Integer) sysInit.invoke(jni);
         Log.i(TAG, "sdkSysInit => " + code);
+        if (code != 0) {
+            Log.w(TAG, "sdkSysInit returned non-zero status: " + code);
+        }
+    }
+
+    private synchronized void resetPrinterSession() {
+        printer = null;
+        formatClass = null;
+        lastError = "SDK not initialized";
     }
 
     private synchronized boolean ensureReady() {
-        if (printer != null && formatClass != null) return true;
+        if (printer != null && formatClass != null) {
+            try {
+                ensureSysInit();
+                return true;
+            } catch (Exception e) {
+                Log.w(TAG, "Re-init before print failed, rebuilding printer session", e);
+                resetPrinterSession();
+            }
+        }
 
         try {
             Class<?> driverManagerClass = loadSdkClass("com.zcs.sdk.DriverManager");
@@ -129,11 +148,11 @@ public class ZcsPrintPlugin extends Plugin {
 
         if (line.startsWith(MARK_XL)) {
             line = line.substring(MARK_XL.length());
-            size = 52;
+            size = 44;
             center = true;
         } else if (line.startsWith(MARK_LARGE)) {
             line = line.substring(MARK_LARGE.length());
-            size = 40;
+            size = 36;
             center = true;
         } else if (line.startsWith(MARK_CENTER)) {
             line = line.substring(MARK_CENTER.length());
@@ -169,9 +188,36 @@ public class ZcsPrintPlugin extends Plugin {
             Object format = buildFormat(style.size, align);
             applyLineSpacing(format);
             printLine.invoke(printer, style.text + "\n", format);
+            if (style.size >= 36) {
+                forwardPaper(10);
+            }
         }
 
         flushPrinter();
+    }
+
+    private static final int RECEIPT_HEADER_LINES = 6;
+
+    private String skipHeaderLines(String text) {
+        String[] lines = text.replace("\r\n", "\n").split("\n", -1);
+        StringBuilder body = new StringBuilder();
+        int skipped = 0;
+        for (String line : lines) {
+            if (line.isEmpty()) continue;
+            if (skipped < RECEIPT_HEADER_LINES) {
+                skipped++;
+                continue;
+            }
+            body.append(line).append('\n');
+        }
+        return body.toString();
+    }
+
+    private void printBitmapViaEscPos(Bitmap bitmap) throws Exception {
+        byte[] payload = EscPosBitmapEncoder.encode(bitmap, ReceiptBitmapRenderer.PAPER_WIDTH);
+        printRawBytes(payload, false);
+        forwardPaper(30);
+        Log.i(TAG, "Printed raster bitmap " + bitmap.getWidth() + "x" + bitmap.getHeight());
     }
 
     private void printViaRawBytes(String text) throws Exception {
@@ -194,23 +240,51 @@ public class ZcsPrintPlugin extends Plugin {
         Log.i(TAG, "sdkPrnPaperForward => " + String.valueOf(feedResult));
     }
 
+    private void prepareForPrint() throws Exception {
+        if (!ensureReady()) {
+            throw new IllegalStateException(lastError);
+        }
+        ensureSysInit();
+    }
+
+    /** Simple ASCII test strings — raw bytes first (works on Z91). */
     private void printTextInternal(String text) throws Exception {
-        Exception bitmapError = null;
+        prepareForPrint();
+
+        Exception rawError = null;
         try {
-            printViaBitmapBuffer(text);
+            printViaRawBytes(text);
             return;
         } catch (Exception e) {
-            bitmapError = e;
-            Log.w(TAG, "Bitmap buffer print failed, trying raw bytes", e);
+            rawError = e;
+            Log.w(TAG, "Raw byte print failed, trying bitmap buffer", e);
         }
 
         try {
-            printViaRawBytes(text);
-        } catch (Exception rawError) {
-            if (bitmapError != null) {
-                rawError.addSuppressed(bitmapError);
+            printViaBitmapBuffer(text);
+        } catch (Exception bitmapError) {
+            if (rawError != null) {
+                bitmapError.addSuppressed(rawError);
             }
-            throw rawError;
+            throw bitmapError;
+        }
+    }
+
+    private boolean printReceiptBitmap(Bitmap bitmap) throws Exception {
+        try {
+            if (tryPrintBitmap(bitmap)) {
+                return true;
+            }
+        } catch (Exception sdkError) {
+            Log.w(TAG, "ZCS SDK bitmap unavailable, trying ESC/POS raster", sdkError);
+        }
+
+        try {
+            printBitmapViaEscPos(bitmap);
+            return true;
+        } catch (Exception rasterError) {
+            Log.w(TAG, "ESC/POS raster bitmap failed", rasterError);
+            return false;
         }
     }
 
@@ -276,7 +350,7 @@ public class ZcsPrintPlugin extends Plugin {
             if (params.length == 1 && Bitmap.class.isAssignableFrom(params[0])) {
                 method.invoke(printer, bitmap);
                 flushPrinter();
-                Log.i(TAG, "QR bitmap via " + method.getName() + "(Bitmap)");
+                Log.i(TAG, "Bitmap via " + method.getName() + "(Bitmap)");
                 return true;
             }
             if (params.length == 2 && Bitmap.class.isAssignableFrom(params[0])
@@ -284,7 +358,7 @@ public class ZcsPrintPlugin extends Plugin {
                 Object format = buildFormat(30, Layout.Alignment.ALIGN_CENTER);
                 method.invoke(printer, bitmap, format);
                 flushPrinter();
-                Log.i(TAG, "QR bitmap via " + method.getName() + "(Bitmap,Format)");
+                Log.i(TAG, "Bitmap via " + method.getName() + "(Bitmap,Format)");
                 return true;
             }
         }
@@ -293,15 +367,11 @@ public class ZcsPrintPlugin extends Plugin {
 
     private void printQrCode(String qrUrl) throws Exception {
         Bitmap qr = ReceiptBitmapRenderer.createQrBitmap(qrUrl, 200);
-        if (tryPrintBitmap(qr)) {
-            forwardPaper(40);
+        if (printReceiptBitmap(qr)) {
+            forwardPaper(20);
             return;
         }
-
-        byte[] payload = buildEscPosQrPayload(qrUrl);
-        printRawBytes(payload, false);
-        forwardPaper(80);
-        Log.i(TAG, "QR via ESC/POS commands");
+        Log.w(TAG, "QR print unavailable — skipping QR");
     }
 
     private Object getJni() throws Exception {
@@ -333,22 +403,50 @@ public class ZcsPrintPlugin extends Plugin {
     }
 
     private void printReceiptInternal(String text, String qrUrl, String footerText) throws Exception {
-        printViaBitmapBuffer(text);
+        prepareForPrint();
+        forwardPaper(24);
 
-        if (qrUrl != null && !qrUrl.trim().isEmpty()) {
+        String trimmedQr = qrUrl != null ? qrUrl.trim() : "";
+        String trimmedFooter = footerText != null ? footerText.trim() : "";
+
+        Bitmap header = ReceiptBitmapRenderer.renderHeaderBlock(text, RECEIPT_HEADER_LINES);
+        if (!printReceiptBitmap(header)) {
+            Log.w(TAG, "Header raster failed, printing header via line buffer");
+            printViaBitmapBuffer(extractHeaderLines(text));
+        }
+
+        String body = skipHeaderLines(text);
+        if (!body.trim().isEmpty()) {
+            printViaBitmapBuffer(body);
+        }
+
+        if (!trimmedQr.isEmpty()) {
             forwardPaper(10);
             try {
-                printQrCode(qrUrl.trim());
+                printQrCode(trimmedQr);
             } catch (Exception qrError) {
                 Log.w(TAG, "QR print failed", qrError);
             }
         }
 
-        if (footerText != null && !footerText.trim().isEmpty()) {
-            printViaBitmapBuffer(footerText);
+        if (!trimmedFooter.isEmpty()) {
+            printViaBitmapBuffer(trimmedFooter);
         }
 
         forwardPaper(100);
+    }
+
+    private String extractHeaderLines(String text) {
+        String[] lines = text.replace("\r\n", "\n").split("\n", -1);
+        StringBuilder header = new StringBuilder();
+        int count = 0;
+        for (String line : lines) {
+            if (line.isEmpty()) continue;
+            header.append(line).append('\n');
+            count++;
+            if (count >= RECEIPT_HEADER_LINES) break;
+        }
+        return header.toString();
     }
 
     @PluginMethod

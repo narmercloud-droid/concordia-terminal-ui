@@ -23,7 +23,7 @@ import java.util.Map;
 final class ReceiptBitmapRenderer {
     static final int PAPER_WIDTH = 384;
     private static final int PADDING_X = 8;
-    private static final int PADDING_TOP = 12;
+    private static final int PADDING_TOP = 32;
     private static final int GAP_SECTION = 10;
     private static final int GAP_LINE = 4;
 
@@ -45,6 +45,33 @@ final class ReceiptBitmapRenderer {
             this.bold = bold;
             this.gapBefore = gapBefore;
         }
+    }
+
+    /** Header block only (branch, type, due time, order id) — avoids ZCS line-buffer clipping. */
+    static Bitmap renderHeaderBlock(String body, int maxLines) {
+        String[] lines = body.replace("\r\n", "\n").split("\n", -1);
+        StringBuilder header = new StringBuilder();
+        int count = 0;
+        for (String line : lines) {
+            if (line.isEmpty()) continue;
+            header.append(line).append('\n');
+            count++;
+            if (count >= maxLines) break;
+        }
+        return renderSection(header.toString());
+    }
+
+    static Bitmap renderSection(String text) {
+        List<Row> rows = parseRows(text);
+        float totalHeight = PADDING_TOP + measureRowsHeight(rows) + 24;
+        int height = Math.max(1, (int) Math.ceil(totalHeight));
+        Bitmap out = Bitmap.createBitmap(PAPER_WIDTH, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(out);
+        canvas.drawColor(Color.WHITE);
+        TextPaint paint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(Color.BLACK);
+        drawRows(canvas, paint, rows, PADDING_TOP);
+        return out;
     }
 
     static Bitmap render(String body, String qrUrl, String footerText) {
@@ -99,7 +126,7 @@ final class ReceiptBitmapRenderer {
             total += row.gapBefore;
             measurePaint.setTypeface(row.bold ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
             measurePaint.setTextSize(row.size);
-            total += measureTextHeight(measurePaint, row.text, PAPER_WIDTH - PADDING_X * 2) + GAP_LINE;
+            total += measureTextHeight(measurePaint, row.text, PAPER_WIDTH - PADDING_X * 2, row.center) + GAP_LINE;
         }
         return total;
     }
@@ -132,12 +159,12 @@ final class ReceiptBitmapRenderer {
 
             if (line.startsWith(MARK_XL)) {
                 line = line.substring(MARK_XL.length());
-                size = 58f;
+                size = 48f;
                 center = true;
                 bold = true;
             } else if (line.startsWith(MARK_LARGE)) {
                 line = line.substring(MARK_LARGE.length());
-                size = 44f;
+                size = 38f;
                 center = true;
                 bold = true;
             } else if (line.startsWith(MARK_CENTER)) {
@@ -152,9 +179,10 @@ final class ReceiptBitmapRenderer {
         return rows;
     }
 
-    private static float measureTextHeight(TextPaint paint, String text, int maxWidth) {
+    private static float measureTextHeight(TextPaint paint, String text, int maxWidth, boolean center) {
         if (text == null || text.isEmpty()) return paint.getTextSize() * 0.5f;
-        StaticLayout layout = buildLayout(paint, text, maxWidth, Layout.Alignment.ALIGN_NORMAL);
+        Layout.Alignment align = center ? Layout.Alignment.ALIGN_CENTER : Layout.Alignment.ALIGN_NORMAL;
+        StaticLayout layout = buildLayout(paint, text, maxWidth, align);
         return layout.getHeight();
     }
 
