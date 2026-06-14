@@ -46,6 +46,7 @@ export const de = {
   rejectError: 'Bestellung konnte nicht abgelehnt werden.',
   statusUpdateFailed: 'Status konnte nicht aktualisiert werden.',
   acceptedPrinted: 'Bestellung angenommen und gedruckt.',
+  acceptedPrinting: 'Bestellung angenommen — Bon wird gedruckt.',
   acceptedNoPrint: 'Bestellung angenommen. Druck fehlgeschlagen.',
   rejected: 'Bestellung abgelehnt.',
   reprinted: 'Bon erneut gedruckt.',

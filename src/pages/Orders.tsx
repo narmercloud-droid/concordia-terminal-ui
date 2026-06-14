@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useOrderStore } from '../store/orderStore.js'
-import { useSocket } from '../hooks/useSocket.js'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { OrderCard } from '../components/OrderCard.js'
 import { Loader } from '../components/Loader.js'
@@ -33,7 +32,6 @@ const Orders = () => {
   const [now, setNow] = useState(Date.now())
   const navigate = useNavigate()
   const location = useLocation()
-  const { connected } = useSocket({ enabled: true })
   const { updateWithAction, updatingId } = useOrderStatusUpdate()
 
   const tabLabels: Record<OrderTab, string> = {
@@ -88,21 +86,25 @@ const Orders = () => {
       }
     }
     load()
-    const timer = window.setInterval(load, connected ? 300_000 : 90_000)
+    const timer = window.setInterval(load, 90_000)
     return () => window.clearInterval(timer)
-  }, [branch_id, loadOrders, t, connected])
+  }, [branch_id, loadOrders, t])
 
   const handleQuickStatus = async (order: Order) => {
     const action = getPrimaryStageAction(order)
     if (!action) return
     setError('')
+    const nextTab = bucketOrder({ ...order, status: action.status })
+    setActiveTab(nextTab)
+    setToastMessage(t(action.labelKey))
     try {
       const updated = await updateWithAction(order.order_id, action, false)
       if (updated) {
-        setToastMessage(t(action.labelKey))
         setActiveTab(bucketOrder(updated))
       }
     } catch (err) {
+      setToastMessage('')
+      setActiveTab(bucketOrder(order))
       setError(getApiErrorMessage(err) ?? t('statusUpdateFailed'))
       console.error(err)
     }

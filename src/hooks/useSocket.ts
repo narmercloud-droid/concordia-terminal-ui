@@ -3,7 +3,6 @@ import { createSocket, disconnectSocket, getSocket } from '../sockets/socket.js'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { useOrderStore } from '../store/orderStore.js'
 import { mapApiOrder } from '../utils/orderMap.js'
-import { playUrgentPendingTone } from '../utils/notificationSound.js'
 import { isBerlinToday } from '../utils/berlinToday.js'
 
 const API_URL =
@@ -38,10 +37,6 @@ export const useSocket = ({ enabled = false }: Options = {}) => {
     const onNew = (payload: unknown) => {
       const order = mapApiOrder(payload)
       if (!isBerlinToday(order.createdAt)) return
-      const existing = useOrderStore.getState().orders.some((o) => o.order_id === order.order_id)
-      if (!existing && (order.status === 'pending' || order.status === 'new')) {
-        playUrgentPendingTone()
-      }
       useOrderStore.getState().upsertOrder(order)
     }
     const onConfirmed = (payload: unknown) => useOrderStore.getState().upsertOrder(mapApiOrder(payload))

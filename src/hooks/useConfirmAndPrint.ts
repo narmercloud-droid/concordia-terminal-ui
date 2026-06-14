@@ -2,8 +2,9 @@ import { useState, useCallback } from 'react'
 import { ordersApi } from '../api/orders.js'
 import { useOrderStore } from '../store/orderStore.js'
 import { useTerminalStore } from '../store/terminalStore.js'
-import { buildOrderReceipt } from '../utils/orderTicket.js'
+import { buildOrderReceipt, resolveCourierUrl } from '../utils/orderTicket.js'
 import { printOrderReceipt } from '../native/devicePrint.js'
+import { stopPendingAlerts } from '../utils/notificationSound.js'
 import { isPickup } from '../utils/orderCountdown.js'
 import type { Order } from '../types/order.js'
 import { useI18n } from '../i18n/index.js'
@@ -28,18 +29,35 @@ export function useConfirmAndPrint() {
   const confirmAndPrint = useCallback(
     async (orderId: string, prepMinutes: number) => {
       setBusy(true)
+      void stopPendingAlerts()
       try {
-        const confirmed = await ordersApi.confirmOrder(orderId, prepMinutes)
+        let confirmed = await ordersApi.confirmOrder(orderId, prepMinutes)
+        const delivery = !String(confirmed.delivery_type ?? '')
+          .toLowerCase()
+          .match(/pickup|abhol/)
+        if (delivery && !resolveCourierUrl(confirmed)) {
+          try {
+            confirmed = await ordersApi.getOrderDetails(orderId)
+          } catch {
+            // use confirm payload as-is
+          }
+        }
+        if (delivery && !resolveCourierUrl(confirmed)) {
+          console.warn('Delivery order missing courier URL/token — QR will not print', orderId)
+        }
         useOrderStore.getState().upsertOrder(confirmed)
         const branchName = useTerminalStore.getState().branch_name
         const receipt = buildOrderReceipt(confirmed, prepMinutes, { branchName })
         const printResult = await printOrderReceipt(receipt)
+        if (!printResult.ok) {
+          console.warn('Receipt print failed:', printResult.error)
+        }
         return {
           confirmed,
           printOk: printResult.ok,
           message: printResult.ok
             ? t('acceptedPrinted')
-            : `${t('acceptedNoPrint')} ${printResult.error ?? ''}`,
+            : `${t('acceptedNoPrint')} ${printResult.error ?? ''}`.trim(),
         }
       } catch (err) {
         console.error(err)

@@ -7,7 +7,7 @@ import { Toast } from '../components/Toast.js'
 import { CountdownBadge } from '../components/CountdownBadge.js'
 import type { OrderDetails as OrderDetailsType, OrderItem } from '../types/order.js'
 import { formatCurrency, formatDateTime } from '../utils/format.js'
-import { buildOrderReceipt } from '../utils/orderTicket.js'
+import { buildOrderReceipt, resolveCourierUrl } from '../utils/orderTicket.js'
 import { printOrderReceipt } from '../native/devicePrint.js'
 import { getStageActions } from '../utils/orderStages.js'
 import type { StageAction } from '../utils/orderStages.js'
@@ -95,7 +95,17 @@ const OrderDetails = () => {
     setConfirming(true)
     setError('')
     try {
-      const confirmed = await ordersApi.confirmOrder(order_id, prepMinutes)
+      let confirmed = await ordersApi.confirmOrder(order_id, prepMinutes)
+      const delivery = !String(confirmed.delivery_type ?? '')
+        .toLowerCase()
+        .match(/pickup|abhol/)
+      if (delivery && !resolveCourierUrl(confirmed)) {
+        try {
+          confirmed = await ordersApi.getOrderDetails(order_id)
+        } catch {
+          // use confirm payload as-is
+        }
+      }
       const branchName = useTerminalStore.getState().branch_name
       const receipt = buildOrderReceipt(confirmed, prepMinutes, { branchName })
       const printResult = await printOrderReceipt(receipt)

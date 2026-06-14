@@ -10,6 +10,14 @@ export interface StageAction {
 const DONE = new Set(['delivered', 'completed', 'picked_up', 'rejected', 'cancelled'])
 const TRANSIT = new Set(['out_for_delivery', 'courier_assigned'])
 
+function normalizeStatus(status: string): string {
+  return status === 'ready' ? 'ready_for_pickup' : status
+}
+
+function isForwardAction(order: Order, action: StageAction): boolean {
+  return normalizeStatus(action.status) !== normalizeStatus(order.status)
+}
+
 export function getPrimaryStageAction(order: Order): StageAction | null {
   const actions = getStageActions(order)
   return actions[0] ?? null
@@ -43,7 +51,7 @@ export function getStageActions(order: Order): StageAction[] {
     actions.push({ status: 'delivered', labelKey: 'actionDelivered' })
   }
 
-  return dedupeActions(actions)
+  return dedupeActions(actions).filter((action) => isForwardAction(order, action))
 }
 
 export function getCrossTabActions(_order: Order): StageAction[] {

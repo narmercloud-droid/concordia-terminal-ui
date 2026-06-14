@@ -7,6 +7,7 @@ import { terminalApi } from '../api/terminal.js'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { ErrorMessage } from '../components/ErrorMessage.js'
 import { useI18n } from '../i18n/index.js'
+import { unlockAudio } from '../utils/notificationSound.js'
 import '../App.css'
 
 function loginErrorMessage(err: unknown): string {
@@ -58,6 +59,7 @@ const Login = () => {
     }
 
     setLoading(true)
+    void unlockAudio()
     try {
       const payload = await terminalApi.activate(parsed.data.branch_code)
       login({

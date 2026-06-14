@@ -4,4 +4,8 @@
     <string name="title_activity_main">Concordia Terminal</string>
     <string name="package_name">de.concordia.terminal</string>
     <string name="custom_url_scheme">de.concordia.terminal</string>
+    <string name="fg_notification_channel">Order alerts</string>
+    <string name="fg_notification_channel_desc">Keeps Concordia Terminal connected for incoming orders</string>
+    <string name="fg_notification_title">Concordia Terminal</string>
+    <string name="fg_notification_text">Waiting for orders — %1$s</string>
 </resources>

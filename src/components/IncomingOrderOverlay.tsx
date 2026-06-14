@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useOrderStore } from '../store/orderStore.js'
 import { ordersApi } from '../api/orders.js'
 import { isPendingOrder } from '../utils/orderCountdown.js'
-import { playUrgentPendingTone, startPendingAlertLoop, stopPendingAlertLoop } from '../utils/notificationSound.js'
+import { playUrgentPendingTone, startPendingAlertLoop, stopPendingAlerts } from '../utils/notificationSound.js'
 import { formatCurrency } from '../utils/format.js'
 import { useI18n } from '../i18n/index.js'
 import {
@@ -51,9 +51,14 @@ export function IncomingOrderOverlay() {
     }
 
     setPrepMinutes(defaultPrepMinutes(order))
-    setDetails(null)
     setLoadError('')
 
+    if ((order.items?.length ?? 0) > 0) {
+      setDetails(null)
+      return
+    }
+
+    setDetails(null)
     let cancelled = false
     ordersApi
       .getOrderDetails(order.order_id)
@@ -70,22 +75,24 @@ export function IncomingOrderOverlay() {
     return () => {
       cancelled = true
     }
-  }, [order?.order_id, t])
+  }, [order?.order_id, order?.items?.length, t])
 
   useEffect(() => {
     if (!order) {
-      stopPendingAlertLoop()
+      void stopPendingAlerts()
       return
     }
 
-    playUrgentPendingTone()
+    void playUrgentPendingTone(true)
     startPendingAlertLoop(() => {
       if (useOrderStore.getState().orders.some(isPendingOrder)) {
-        playUrgentPendingTone()
+        void playUrgentPendingTone(true)
       }
-    }, 6000)
+    }, 6_000)
 
-    return () => stopPendingAlertLoop()
+    return () => {
+      void stopPendingAlerts()
+    }
   }, [order?.order_id])
 
   if (!order) return null
@@ -102,6 +109,7 @@ export function IncomingOrderOverlay() {
   const handleReject = async () => {
     const reason = window.prompt(t('rejectPrompt')) ?? ''
     setRejecting(true)
+    void stopPendingAlerts()
     try {
       await ordersApi.rejectOrder(order.order_id, reason || undefined)
       useOrderStore.getState().removeOrder(order.order_id)
@@ -115,6 +123,7 @@ export function IncomingOrderOverlay() {
 
   const handleAcceptAndPrint = async () => {
     setLoadError('')
+    void stopPendingAlerts()
     try {
       const result = await confirmAndPrint(order.order_id, prepMinutes)
       setToastMessage(result.message)

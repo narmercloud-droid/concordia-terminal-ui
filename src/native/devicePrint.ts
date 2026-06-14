@@ -8,7 +8,11 @@ export interface DevicePrintPlugin {
   isAvailable(): Promise<{ available: boolean; reason?: string }>
   getDiagnostics?(): Promise<Record<string, unknown>>
   printText(options: { text: string }): Promise<{ ok: boolean }>
-  printReceipt?(options: { text: string; qrUrl?: string; footerText?: string }): Promise<{ ok: boolean }>
+  printReceipt?(options: {
+    text: string
+    qrUrl?: string
+    footerText?: string
+  }): Promise<{ ok: boolean; qrPrinted?: boolean }>
 }
 
 const KingtopPrint = registerPlugin<DevicePrintPlugin>('KingtopPrint')
@@ -17,35 +21,54 @@ const ZcsPrint = registerPlugin<DevicePrintPlugin>('ZcsPrint')
 async function printReceiptOnPlugin(
   plugin: DevicePrintPlugin,
   receipt: OrderReceipt,
-): Promise<boolean> {
+): Promise<{ ok: boolean; qrPrinted: boolean }> {
+  const needsQr = Boolean(receipt.qrUrl?.trim())
   if (plugin.printReceipt) {
-    await plugin.printReceipt({
+    const result = await plugin.printReceipt({
       text: receipt.text,
       qrUrl: receipt.qrUrl,
       footerText: receipt.footerText,
     })
-    return true
+    const qrPrinted = needsQr ? result.qrPrinted !== false && result.ok !== false : true
+    return { ok: result.ok !== false, qrPrinted }
   }
   await plugin.printText({ text: receipt.text })
-  return !receipt.qrUrl
+  return { ok: true, qrPrinted: !needsQr }
 }
 
 export async function printOrderReceipt(
   receipt: OrderReceipt,
 ): Promise<{ ok: boolean; error?: string; driver?: string; qrPrinted?: boolean }> {
-  const network = await printOnNetworkPrinter(receipt.text)
-  if (network.ok) {
-    return { ok: true, driver: 'network', qrPrinted: false }
+  const needsQr = Boolean(receipt.qrUrl?.trim())
+
+  // Network printers only get plain text — never use them when a driver QR is required.
+  let networkError = ''
+  if (!needsQr) {
+    const network = await printOnNetworkPrinter(receipt.text)
+    if (network.ok) {
+      return { ok: true, driver: 'network', qrPrinted: false }
+    }
+    networkError = network.error ?? ''
   }
-  const networkError = network.error ?? ''
 
   let zcsReason = ''
   try {
     const zcs = await ZcsPrint.isAvailable()
     if (!zcs.available && zcs.reason) zcsReason = zcs.reason
     if (zcs.available) {
-      const qrOnlyText = await printReceiptOnPlugin(ZcsPrint, receipt)
-      return { ok: true, driver: 'zcs', qrPrinted: Boolean(receipt.qrUrl) && !qrOnlyText }
+      const printed = await printReceiptOnPlugin(ZcsPrint, receipt)
+      if (needsQr && !printed.qrPrinted) {
+        return {
+          ok: false,
+          error: 'Delivery QR did not print',
+          driver: 'zcs',
+          qrPrinted: false,
+        }
+      }
+      if (!printed.ok) {
+        return { ok: false, error: 'Receipt print failed', driver: 'zcs', qrPrinted: false }
+      }
+      return { ok: true, driver: 'zcs', qrPrinted: printed.qrPrinted }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'ZCS print failed'
@@ -59,8 +82,19 @@ export async function printOrderReceipt(
       kingtopReason = kingtop.reason
     }
     if (kingtop.available) {
-      const qrOnlyText = await printReceiptOnPlugin(KingtopPrint, receipt)
-      return { ok: true, driver: 'kingtop', qrPrinted: Boolean(receipt.qrUrl) && !qrOnlyText }
+      const printed = await printReceiptOnPlugin(KingtopPrint, receipt)
+      if (needsQr && !printed.qrPrinted) {
+        return {
+          ok: false,
+          error: 'Delivery QR did not print',
+          driver: 'kingtop',
+          qrPrinted: false,
+        }
+      }
+      if (!printed.ok) {
+        return { ok: false, error: 'Receipt print failed', driver: 'kingtop', qrPrinted: false }
+      }
+      return { ok: true, driver: 'kingtop', qrPrinted: printed.qrPrinted }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Kingtop print failed'

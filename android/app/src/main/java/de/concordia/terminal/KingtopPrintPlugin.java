@@ -300,6 +300,34 @@ public class KingtopPrintPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void printReceipt(PluginCall call) {
+        String text = call.getString("text", "");
+        String qrUrl = call.getString("qrUrl");
+        String footerText = call.getString("footerText", "");
+        if (!ensureReady()) {
+            call.reject("Kingtop printer SDK not available: " + lastInitError);
+            return;
+        }
+
+        new Thread(() -> {
+            try {
+                printTextInternal(text);
+                boolean qrPrinted = true;
+                if (qrUrl != null && !qrUrl.trim().isEmpty()) {
+                    qrPrinted = KingtopQrPrint.print(getContext(), qrUrl.trim(), footerText);
+                }
+                JSObject result = new JSObject();
+                result.put("ok", qrPrinted);
+                result.put("qrPrinted", qrPrinted);
+                resolveOnMain(call, result);
+            } catch (Exception e) {
+                Log.e(TAG, "Kingtop receipt print failed", e);
+                rejectOnMain(call, "Kingtop receipt print failed: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    @PluginMethod
     public void printText(PluginCall call) {
         String text = call.getString("text", "");
         if (!ensureReady()) {

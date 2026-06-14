@@ -26,6 +26,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ZcsPrintPlugin.class);
         registerPlugin(KingtopPrintPlugin.class);
         registerPlugin(NetworkPrintPlugin.class);
+        registerPlugin(AlertSoundPlugin.class);
+        registerPlugin(TerminalKeepAlivePlugin.class);
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         enableImmersiveMode();
@@ -110,7 +112,7 @@ public class MainActivity extends BridgeActivity {
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setDomStorageEnabled(true);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            WebView.setWebContentsDebuggingEnabled(false);
+            WebView.setWebContentsDebuggingEnabled(true);
         }
     }
 

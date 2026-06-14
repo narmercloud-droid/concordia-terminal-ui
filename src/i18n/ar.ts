@@ -48,6 +48,7 @@ export const ar: Record<TranslationKey, string> = {
   rejectError: 'تعذر رفض الطلب.',
   statusUpdateFailed: 'تعذر تحديث الحالة.',
   acceptedPrinted: 'تم قبول الطلب وطباعته.',
+  acceptedPrinting: 'تم قبول الطلب — جاري طباعة الإيصال.',
   acceptedNoPrint: 'تم القبول. فشلت الطباعة.',
   rejected: 'تم رفض الطلب.',
   reprinted: 'تمت إعادة الطباعة.',

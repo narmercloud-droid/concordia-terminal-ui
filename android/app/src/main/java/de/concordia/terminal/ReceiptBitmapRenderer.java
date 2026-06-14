@@ -22,14 +22,17 @@ import java.util.Map;
 /** Renders a Lieferando-style receipt as one monochrome bitmap (384px = 58mm). */
 final class ReceiptBitmapRenderer {
     static final int PAPER_WIDTH = 384;
-    private static final int PADDING_X = 8;
-    private static final int PADDING_TOP = 32;
-    private static final int GAP_SECTION = 10;
-    private static final int GAP_LINE = 4;
+    private static final int PADDING_X = 6;
+    private static final int PADDING_TOP = 2;
+    private static final int GAP_SECTION = 0;
+    private static final int GAP_LINE = 0;
 
+    private static final String MARK_TIGHT = "@@TIGHT@@";
+    private static final String MARK_BOLD_CENTER = "@@BOLD_CENTER@@";
     private static final String MARK_XL = "@@XL@@";
     private static final String MARK_LARGE = "@@LARGE@@";
     private static final String MARK_CENTER = "@@CENTER@@";
+    private static final String MARK_BOLD = "@@BOLD@@";
 
     private static class Row {
         final String text;
@@ -63,7 +66,7 @@ final class ReceiptBitmapRenderer {
 
     static Bitmap renderSection(String text) {
         List<Row> rows = parseRows(text);
-        float totalHeight = PADDING_TOP + measureRowsHeight(rows) + 24;
+        float totalHeight = PADDING_TOP + measureRowsHeight(rows) + 12;
         int height = Math.max(1, (int) Math.ceil(totalHeight));
         Bitmap out = Bitmap.createBitmap(PAPER_WIDTH, height, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(out);
@@ -84,7 +87,7 @@ final class ReceiptBitmapRenderer {
         int qrSize = 0;
         if (qrUrl != null && !qrUrl.trim().isEmpty()) {
             try {
-                qrSize = 220;
+                qrSize = 200;
                 qrBitmap = createQrBitmap(qrUrl.trim(), qrSize);
             } catch (Exception ignored) {
                 qrBitmap = null;
@@ -95,7 +98,7 @@ final class ReceiptBitmapRenderer {
         if (qrBitmap != null) {
             totalHeight += GAP_SECTION + qrSize + GAP_SECTION;
         }
-        totalHeight += measureRowsHeight(footerRows) + 48;
+        totalHeight += measureRowsHeight(footerRows) + 12;
 
         int height = Math.max(1, (int) Math.ceil(totalHeight));
         Bitmap out = Bitmap.createBitmap(PAPER_WIDTH, height, Bitmap.Config.ARGB_8888);
@@ -152,27 +155,60 @@ final class ReceiptBitmapRenderer {
                 continue;
             }
 
-            float size = 32f;
+            float size = 28f;
             boolean center = false;
             boolean bold = false;
+            boolean tight = false;
             String line = raw;
 
-            if (line.startsWith(MARK_XL)) {
-                line = line.substring(MARK_XL.length());
-                size = 48f;
-                center = true;
-                bold = true;
-            } else if (line.startsWith(MARK_LARGE)) {
-                line = line.substring(MARK_LARGE.length());
-                size = 38f;
-                center = true;
-                bold = true;
-            } else if (line.startsWith(MARK_CENTER)) {
-                line = line.substring(MARK_CENTER.length());
-                center = true;
+            while (true) {
+                if (line.startsWith(MARK_TIGHT)) {
+                    line = line.substring(MARK_TIGHT.length());
+                    tight = true;
+                    continue;
+                }
+                if (line.startsWith(MARK_BOLD_CENTER)) {
+                    line = line.substring(MARK_BOLD_CENTER.length());
+                    size = 29f;
+                    center = true;
+                    bold = true;
+                    continue;
+                }
+                if (line.startsWith(MARK_XL)) {
+                    line = line.substring(MARK_XL.length());
+                    size = 40f;
+                    center = true;
+                    bold = true;
+                    break;
+                }
+                if (line.startsWith(MARK_CENTER)) {
+                    line = line.substring(MARK_CENTER.length());
+                    center = true;
+                    continue;
+                }
+                if (line.startsWith(MARK_LARGE)) {
+                    line = line.substring(MARK_LARGE.length());
+                    size = 32f;
+                    center = true;
+                    bold = true;
+                    continue;
+                }
+                if (line.startsWith(MARK_BOLD)) {
+                    line = line.substring(MARK_BOLD.length());
+                    size = 27f;
+                    bold = true;
+                    break;
+                }
+                break;
             }
 
-            int gap = lastWasBlank ? GAP_SECTION : 0;
+            if (line.startsWith("   *") || line.startsWith("* ") || line.startsWith("   \u00bb")) {
+                size = 26f;
+            } else if (line.matches("-{8,}.*")) {
+                size = 24f;
+            }
+
+            int gap = (lastWasBlank && !tight) ? GAP_SECTION : 0;
             rows.add(new Row(line, size, center, bold, gap));
             lastWasBlank = false;
         }

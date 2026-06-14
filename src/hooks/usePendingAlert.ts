@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useOrderStore } from '../store/orderStore.js'
 import { isPendingOrder } from '../utils/orderCountdown.js'
-import { playUrgentPendingTone, startPendingAlertLoop, stopPendingAlertLoop } from '../utils/notificationSound.js'
+import { playUrgentPendingTone, startPendingAlertLoop, stopPendingAlerts } from '../utils/notificationSound.js'
 
 export function usePendingAlert() {
   const orders = useOrderStore((state) => state.orders)
@@ -9,11 +9,17 @@ export function usePendingAlert() {
 
   useEffect(() => {
     if (pendingCount > 0) {
-      playUrgentPendingTone()
-      startPendingAlertLoop(() => useOrderStore.getState().orders.some(isPendingOrder))
+      void playUrgentPendingTone()
+      startPendingAlertLoop(() => {
+        if (useOrderStore.getState().orders.some(isPendingOrder)) {
+          void playUrgentPendingTone()
+        }
+      })
     } else {
-      stopPendingAlertLoop()
+      void stopPendingAlerts()
     }
-    return () => stopPendingAlertLoop()
+    return () => {
+      void stopPendingAlerts()
+    }
   }, [pendingCount])
 }

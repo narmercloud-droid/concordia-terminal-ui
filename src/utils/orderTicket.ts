@@ -4,10 +4,14 @@ import { orderShortId } from './orderDisplay.js'
 /** 58mm printer ~32 chars at normal size */
 const WIDTH = 32
 
-/** Print markers interpreted by ZcsPrintPlugin */
-const XL = '@@XL@@'
+/** Print markers interpreted by ZcsPrintPlugin / ReceiptBitmapRenderer */
+const TIGHT = '@@TIGHT@@'
 const LARGE = '@@LARGE@@'
 const CENTER = '@@CENTER@@'
+const BOLD = '@@BOLD@@'
+const BOLD_CENTER = '@@BOLD_CENTER@@'
+
+const RULE = '-'.repeat(WIDTH)
 
 export type TicketOptions = {
   branchName?: string
@@ -40,21 +44,12 @@ function center(text: string): string {
   return `${CENTER}${text}`
 }
 
-function wrapCenter(text: string): string[] {
-  const words = text.split(/\s+/)
-  const lines: string[] = []
-  let current = ''
-  for (const word of words) {
-    const next = current ? `${current} ${word}` : word
-    if (next.length > WIDTH) {
-      if (current) lines.push(center(current))
-      current = word.length > WIDTH ? word.slice(0, WIDTH) : word
-    } else {
-      current = next
-    }
-  }
-  if (current) lines.push(center(current))
-  return lines
+function centerLarge(text: string): string {
+  return `${TIGHT}${CENTER}${LARGE}${text}`
+}
+
+function boldCenter(text: string): string {
+  return `${BOLD_CENTER}${text}`
 }
 
 function padLine(left: string, right: string): string {
@@ -70,7 +65,7 @@ function isPickup(type?: string): boolean {
 }
 
 function formatAmount(value: number): string {
-  return value.toFixed(2)
+  return `${value.toFixed(2)} €`
 }
 
 function formatReceiptOrderId(orderId: string): string {
@@ -86,6 +81,15 @@ function displayBranchName(name?: string): string {
   return n
 }
 
+function formatCustomerName(name?: string): string {
+  const parts = (name ?? 'Gast').trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return 'Gast'
+  if (parts.length === 1) return parts[0]
+  const initial = parts[0].charAt(0).toUpperCase()
+  const lastName = parts[parts.length - 1]
+  return `${initial}. ${lastName}`
+}
+
 function isPaid(order: OrderDetails): boolean {
   const method = (order.paymentMethod ?? '').toLowerCase()
   return (
@@ -96,13 +100,19 @@ function isPaid(order: OrderDetails): boolean {
   )
 }
 
+function paymentStatusLine(order: OrderDetails, pickup: boolean, paid: boolean): string {
+  if (paid) return boldCenter(`BEZAHLT · ${paymentMethodLabel(order)}`)
+  if (pickup) return boldCenter('BAR BEI ABHOLUNG')
+  return boldCenter('ZAHLUNG BEI LIEFERUNG')
+}
+
 function paymentMethodLabel(order: OrderDetails): string {
   const method = (order.paymentMethod ?? '').toLowerCase()
-  if (method === 'card') return 'Karte ************'
+  if (method === 'card') return 'Karte'
   if (method === 'paypal') return 'PayPal'
   if (method === 'klarna') return 'Klarna'
-  if (isPickup(order.delivery_type)) return 'Bar bei Abholung'
-  return 'Bar bei Lieferung'
+  if (isPickup(order.delivery_type)) return 'Bar'
+  return 'Bar'
 }
 
 function splitCustomerNotes(notes?: string): string | undefined {
@@ -120,6 +130,13 @@ function splitCustomerNotes(notes?: string): string | undefined {
   return lines.length ? lines.join('\n') : undefined
 }
 
+function appendOrderNotes(lines: string[], notes?: string): void {
+  if (!notes) return
+  for (const line of notes.split('\n').map((l) => l.trim()).filter(Boolean)) {
+    lines.push(`* ${line}`)
+  }
+}
+
 function itemModifiers(item: OrderItem): OrderItem['extras'] {
   return [...(item.extras ?? []), ...(item.toppings ?? [])]
 }
@@ -134,28 +151,33 @@ function itemLineTotal(item: OrderItem): number {
 function formatItemBlock(item: OrderItem): string[] {
   const lines: string[] = []
   const num = item.itemNumber ? `#${item.itemNumber} ` : ''
-  lines.push(padLine(`${item.quantity} x ${num}${item.name}`, formatAmount(itemLineTotal(item))))
+  lines.push(
+    `${BOLD}${padLine(`${item.quantity}x ${num}${item.name}`, formatAmount(itemLineTotal(item)))}`,
+  )
 
   for (const variant of item.variants ?? []) {
     const label = variant.value && variant.value !== variant.name ? variant.value : variant.name
-    if (label) lines.push(`   ${label}`)
+    if (label) lines.push(`   * ${label}`)
   }
 
   for (const mod of itemModifiers(item) ?? []) {
-    lines.push(`   ${mod.name}`)
+    lines.push(`   * ${mod.name}`)
   }
 
   if (item.notes) {
-    lines.push(`   ${item.notes}`)
+    lines.push(`   » ${item.notes}`)
   }
 
   return lines
 }
 
+/** Production customer site — used for driver QR fallback when API omits courierUrl. */
+const PRODUCTION_FRONTEND = "https://www.concordiapizza.de"
+
 export function resolveCourierUrl(order: OrderDetails): string | undefined {
   if (order.courierUrl) return order.courierUrl
   if (order.courierToken) {
-    return `https://concordia-restaurant-de.vercel.app/courier/order?token=${order.courierToken}`
+    return `${PRODUCTION_FRONTEND}/courier/order?token=${order.courierToken}`
   }
   return undefined
 }
@@ -176,8 +198,7 @@ export function buildOrderReceipt(
       : order.items.reduce((sum, item) => sum + itemLineTotal(item), 0)
   const deliveryFee = order.deliveryFee ?? 0
   const discount = order.discount ?? 0
-  const orderAmount = Math.max(0, subtotal - discount)
-  const total = order.total > 0 ? order.total : orderAmount + deliveryFee
+  const total = order.total > 0 ? order.total : Math.max(0, subtotal - discount) + deliveryFee
 
   const dueIso =
     order.scheduledFor ??
@@ -191,65 +212,60 @@ export function buildOrderReceipt(
   const accepted = berlinParts(order.confirmedAt ?? new Date().toISOString())
 
   const lines: string[] = [
-    center(branch),
-    `${LARGE}${pickup ? 'ABHOLUNG' : 'LIEFERUNG'}`,
-    center(`Fällig: ${due.dueDate}`),
-    center('so bald als möglich'),
-    `${XL}${due.time}`,
-    `${LARGE}${formatReceiptOrderId(order.order_id)}`,
+    centerLarge(branch),
+    centerLarge(pickup ? 'ABHOLUNG' : 'LIEFERUNG'),
+    boldCenter(`Fällig: ${due.dueDate}, ${due.time}`),
+    center(formatReceiptOrderId(order.order_id)),
+    RULE,
   ]
 
   for (const item of order.items) {
     lines.push(...formatItemBlock(item))
   }
 
-  lines.push(
-    padLine('Zwischensumme', formatAmount(subtotal)),
-    padLine('Gesamtbetrag der Bestellung', formatAmount(orderAmount)),
-  )
+  lines.push(RULE)
+
+  const grossBeforeDiscount = subtotal + deliveryFee
 
   if (deliveryFee > 0) {
     lines.push(padLine('Liefergebühr', formatAmount(deliveryFee)))
   }
 
-  lines.push(
-    padLine('Gesamtbetrag', formatAmount(total)),
-    padLine(
-      paid ? `Bezahlt von: ${paymentMethodLabel(order)}` : paymentMethodLabel(order),
-      formatAmount(total),
-    ),
-    ...wrapCenter(
-      'WICHTIG: FÜR ANGABEN ZU LEBENSMITTELALLERGENEN Rufe das Restaurant an oder überprüfe Sie die Speisekarte.',
-    ),
-  )
+  lines.push(padLine('Gesamt', formatAmount(grossBeforeDiscount)))
 
-  if (paid) {
-    lines.push(`${LARGE}BESTELLUNG IST BEZAHLT`)
-  } else if (!pickup) {
-    lines.push(`${LARGE}ZAHLUNG BEI LIEFERUNG`)
-  }
-
-  lines.push('Details zum/zur Kund:in:', order.customerName ?? 'Gast')
-
-  if (!pickup && order.deliveryAddress) {
-    for (const part of order.deliveryAddress.split(',').map((p) => p.trim()).filter(Boolean)) {
-      lines.push(part)
+  if (discount > 0 || grossBeforeDiscount > total + 0.009) {
+    const shownDiscount = grossBeforeDiscount - total
+    if (shownDiscount > 0.009) {
+      lines.push(padLine('Rabatt', `-${formatAmount(shownDiscount)}`))
     }
   }
 
-  if (customerNotes) {
-    lines.push(customerNotes)
+  lines.push(`${BOLD}${padLine('Gesamtbetrag', formatAmount(total))}`)
+  lines.push(RULE)
+  lines.push(paymentStatusLine(order, pickup, paid))
+  lines.push(`${BOLD}Kunde: ${formatCustomerName(order.customerName)}`)
+
+  if (pickup) {
+    appendOrderNotes(lines, customerNotes)
+  } else if (order.deliveryAddress) {
+    const address = order.deliveryAddress
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .join(', ')
+    lines.push(`${BOLD}${address}`)
+    appendOrderNotes(lines, customerNotes)
   }
 
   lines.push(
-    `Bestellung aufgegeben um: ${placed.stamp}`,
-    `Bestellung angenommen um: ${accepted.stamp}`,
+    `Aufgegeben: ${placed.stamp}`,
+    `Angenommen: ${accepted.stamp}`,
   )
 
   const qrUrl = !pickup ? resolveCourierUrl(order) : undefined
   const footerText = qrUrl
-    ? `${center('Zum Liefern scannen')}\n${center('Das ist keine Rechnung')}`
-    : `${center('Das ist keine Rechnung')}`
+    ? `${center('Zum Liefern scannen')}\n${center('Lieferschein · keine Rechnung')}`
+    : `${center('Lieferschein · keine Rechnung')}`
 
   return { text: lines.join('\n'), qrUrl, footerText }
 }

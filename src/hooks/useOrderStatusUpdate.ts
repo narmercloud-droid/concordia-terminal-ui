@@ -20,7 +20,13 @@ export function useOrderStatusUpdate() {
 
   const updateOrderStatus = useCallback(
     async (orderId: string, status: string, options?: UpdateOptions) => {
+      const previous = useOrderStore.getState().orders.find((o) => o.order_id === orderId)
       setUpdatingId(orderId)
+
+      if (previous) {
+        useOrderStore.getState().upsertOrder({ ...previous, status })
+      }
+
       try {
         const updated = await ordersApi.updateStatus(orderId, status)
         useOrderStore.getState().upsertOrder(updated)
@@ -32,6 +38,12 @@ export function useOrderStatusUpdate() {
         }
 
         return updated
+      } catch (err) {
+        if (previous) {
+          useOrderStore.getState().upsertOrder(previous)
+        }
+        console.error('[status update failed]', orderId, status, err)
+        throw err
       } finally {
         setUpdatingId(null)
       }
