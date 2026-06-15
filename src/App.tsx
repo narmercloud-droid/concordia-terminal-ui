@@ -1,5 +1,5 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect } from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login.js'
 import Orders from './pages/Orders.js'
 import OrderDetails from './pages/OrderDetails.js'
@@ -15,7 +15,14 @@ import './App.css'
 function App() {
   const isAuthenticated = useTerminalStore((state) => state.isAuthenticated)
   const branch_id = useTerminalStore((state) => state.branch_id)
+  const loadBranchStatus = useTerminalStore((state) => state.loadBranchStatus)
   useHardwareBack('/orders')
+
+  useEffect(() => {
+    if (isAuthenticated && branch_id) {
+      loadBranchStatus(branch_id).catch(console.error)
+    }
+  }, [isAuthenticated, branch_id, loadBranchStatus])
 
   useEffect(() => {
     if (isAuthenticated && branch_id) {

@@ -1,5 +1,5 @@
 import type { Socket } from 'socket.io-client'
-import { createSocket, disconnectSocket } from '../sockets/socket.js'
+import { createSocket, disconnectSocket, getSocket } from '../sockets/socket.js'
 import { useOrderStore } from '../store/orderStore.js'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { mapApiOrder } from '../utils/orderMap.js'
@@ -33,7 +33,12 @@ export function subscribeOrderRealtimeConnection(listener: Listener): () => void
 }
 
 export function isOrderRealtimeConnected(): boolean {
-  return Boolean(socket?.connected)
+  return Boolean(getSocket()?.connected)
+}
+
+export function isOrderRealtimeReconnecting(): boolean {
+  const activeSocket = getSocket()
+  return Boolean(activeSocket && !activeSocket.connected && activeSocket.active)
 }
 
 export function startOrderRealtime() {
@@ -67,13 +72,24 @@ export function startOrderRealtime() {
     return
   }
 
-  const onConnect = () => notifyConnectionListeners()
+  const onConnect = () => {
+    notifyConnectionListeners()
+    const branchId = useTerminalStore.getState().branch_id
+    if (branchId) {
+      void useOrderStore.getState().loadOrders(branchId)
+    }
+  }
   const onDisconnect = () => notifyConnectionListeners()
+  const onReconnectAttempt = () => notifyConnectionListeners()
+  const onConnectError = () => notifyConnectionListeners()
+
   const onNew = (payload: unknown) => {
     const order = mapApiOrder(payload)
     if (!isBerlinToday(order.createdAt)) return
     useOrderStore.getState().upsertOrder(order)
-    void bringAppToFront()
+    if (!useTerminalStore.getState().ordersPaused) {
+      void bringAppToFront()
+    }
   }
   const onConfirmed = (payload: unknown) => {
     useOrderStore.getState().upsertOrder(mapApiOrder(payload))
@@ -102,13 +118,21 @@ export function startOrderRealtime() {
       useOrderStore.getState().upsertOrder({ ...existing, status: payload.status })
     }
   }
+  const onBranchStatus = (payload: { ordersPaused?: boolean }) => {
+    if (typeof payload?.ordersPaused === 'boolean') {
+      useTerminalStore.setState({ ordersPaused: payload.ordersPaused })
+    }
+  }
 
   socket.on('connect', onConnect)
   socket.on('disconnect', onDisconnect)
+  socket.on('reconnect_attempt', onReconnectAttempt)
+  socket.on('connect_error', onConnectError)
   socket.on('order:new', onNew)
   socket.on('order:confirmed', onConfirmed)
   socket.on('order_update', onUpdate)
   socket.on('order_status', onStatus)
+  socket.on('branch:status', onBranchStatus)
   notifyConnectionListeners()
 }
 

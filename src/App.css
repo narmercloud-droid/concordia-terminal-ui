@@ -559,6 +559,10 @@
   color: #dc2626;
 }
 
+.status-reconnecting .status-dot {
+  color: #d97706;
+}
+
 .status-unknown .status-dot {
   color: #6b7280;
 }
@@ -1078,6 +1082,16 @@
   font-size: 1rem;
 }
 
+.incoming-queue-hint {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-weight: 700;
+  display: inline-block;
+}
+
 .incoming-id {
   margin: 0;
   font-size: 2rem;
@@ -1252,4 +1266,51 @@
   margin-top: 24px;
   color: #6b7280;
   font-size: 0.9rem;
+}
+
+.reject-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  background: rgba(17, 24, 39, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.reject-dialog {
+  width: min(100%, 420px);
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
+}
+
+.reject-dialog h2 {
+  margin: 0 0 16px;
+  font-size: 1.35rem;
+}
+
+.reject-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+  font-weight: 600;
+}
+
+.reject-dialog-field textarea {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  padding: 12px;
+  font: inherit;
+  resize: vertical;
+}
+
+.reject-dialog-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
 }

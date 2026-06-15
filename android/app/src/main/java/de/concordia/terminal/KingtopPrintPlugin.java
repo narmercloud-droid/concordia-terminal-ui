@@ -271,32 +271,36 @@ public class KingtopPrintPlugin extends Plugin {
 
     @PluginMethod
     public void isAvailable(PluginCall call) {
-        JSObject result = new JSObject();
-        boolean available = ensureReady();
-        result.put("available", available);
-        if (!available) {
-            result.put("reason", lastInitError);
-        } else {
-            result.put("initPath", initPath);
-        }
-        call.resolve(result);
+        new Thread(() -> {
+            JSObject result = new JSObject();
+            boolean available = ensureReady();
+            result.put("available", available);
+            if (!available) {
+                result.put("reason", lastInitError);
+            } else {
+                result.put("initPath", initPath);
+            }
+            resolveOnMain(call, result);
+        }).start();
     }
 
     @PluginMethod
     public void getDiagnostics(PluginCall call) {
-        JSObject result = new JSObject();
-        StringBuilder found = new StringBuilder();
-        for (String name : HANDLER_CLASSES) {
-            if (tryLoadClass(name)) {
-                if (found.length() > 0) found.append(", ");
-                found.append(name);
+        new Thread(() -> {
+            JSObject result = new JSObject();
+            StringBuilder found = new StringBuilder();
+            for (String name : HANDLER_CLASSES) {
+                if (tryLoadClass(name)) {
+                    if (found.length() > 0) found.append(", ");
+                    found.append(name);
+                }
             }
-        }
-        result.put("handlerClassesFound", found.length() > 0 ? found.toString() : "none");
-        result.put("available", ensureReady());
-        result.put("lastError", lastInitError);
-        result.put("initPath", initPath);
-        call.resolve(result);
+            result.put("handlerClassesFound", found.length() > 0 ? found.toString() : "none");
+            result.put("available", ensureReady());
+            result.put("lastError", lastInitError);
+            result.put("initPath", initPath);
+            resolveOnMain(call, result);
+        }).start();
     }
 
     @PluginMethod
@@ -304,13 +308,13 @@ public class KingtopPrintPlugin extends Plugin {
         String text = call.getString("text", "");
         String qrUrl = call.getString("qrUrl");
         String footerText = call.getString("footerText", "");
-        if (!ensureReady()) {
-            call.reject("Kingtop printer SDK not available: " + lastInitError);
-            return;
-        }
 
         new Thread(() -> {
             try {
+                if (!ensureReady()) {
+                    rejectOnMain(call, "Kingtop printer SDK not available: " + lastInitError);
+                    return;
+                }
                 printTextInternal(text);
                 boolean qrPrinted = true;
                 if (qrUrl != null && !qrUrl.trim().isEmpty()) {
@@ -330,13 +334,13 @@ public class KingtopPrintPlugin extends Plugin {
     @PluginMethod
     public void printText(PluginCall call) {
         String text = call.getString("text", "");
-        if (!ensureReady()) {
-            call.reject("Kingtop printer SDK not available: " + lastInitError);
-            return;
-        }
 
         new Thread(() -> {
             try {
+                if (!ensureReady()) {
+                    rejectOnMain(call, "Kingtop printer SDK not available: " + lastInitError);
+                    return;
+                }
                 printTextInternal(text);
                 JSObject result = new JSObject();
                 result.put("ok", true);

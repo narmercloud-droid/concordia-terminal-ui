@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useOrderStore } from '../store/orderStore.js'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { SideMenu } from './SideMenu.js'
+import { ConnectionStatus } from './ConnectionStatus.js'
 import { isPendingOrder } from '../utils/orderCountdown.js'
 import { useI18n } from '../i18n/index.js'
 import '../App.css'
@@ -54,6 +55,7 @@ export const Header = () => {
           <p className="terminal-name">{branch_name || t('appName')}</p>
         </button>
         <div className="header-actions">
+          <ConnectionStatus />
           {ordersPaused ? <span className="header-paused-pill">{t('ordersPausedShort')}</span> : null}
           <button
             type="button"

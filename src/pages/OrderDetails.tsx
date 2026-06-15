@@ -17,6 +17,7 @@ import { useI18n } from '../i18n/index.js'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { useOrderStatusUpdate } from '../hooks/useOrderStatusUpdate.js'
 import { getStatusLabelKey, orderShortId } from '../utils/orderDisplay.js'
+import { RejectOrderDialog } from '../components/RejectOrderDialog.js'
 import '../App.css'
 
 const PREP_PRESETS_DELIVERY = [30, 45, 60, 75]
@@ -37,6 +38,7 @@ const OrderDetails = () => {
   const [error, setError] = useState('')
   const [confirming, setConfirming] = useState(false)
   const [rejecting, setRejecting] = useState(false)
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
   const navigate = useNavigate()
   const { updateWithAction, isUpdating } = useOrderStatusUpdate()
@@ -125,13 +127,13 @@ const OrderDetails = () => {
     }
   }
 
-  const handleReject = async () => {
+  const handleReject = async (reason: string) => {
     if (!order_id || !isPending) return
-    const reason = window.prompt(t('rejectPrompt')) ?? ''
     setRejecting(true)
     setError('')
     try {
       await ordersApi.rejectOrder(order_id, reason || undefined)
+      setRejectDialogOpen(false)
       navigate('/orders', { state: { toast: t('rejected') } })
     } catch (err) {
       setError(t('rejectError'))
@@ -310,7 +312,12 @@ const OrderDetails = () => {
               ) : null}
               {isPending ? (
                 <>
-                  <button className="button danger" type="button" onClick={handleReject} disabled={rejecting}>
+                  <button
+                    className="button danger"
+                    type="button"
+                    onClick={() => setRejectDialogOpen(true)}
+                    disabled={rejecting}
+                  >
                     {rejecting ? t('rejecting') : t('reject')}
                   </button>
                   <button className="button primary" type="button" onClick={handleConfirm} disabled={confirming}>
@@ -322,6 +329,13 @@ const OrderDetails = () => {
           </>
         ) : null}
       </div>
+
+      <RejectOrderDialog
+        open={rejectDialogOpen}
+        busy={rejecting}
+        onClose={() => setRejectDialogOpen(false)}
+        onConfirm={handleReject}
+      />
     </div>
   )
 }

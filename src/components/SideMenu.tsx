@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { useI18n, type Language } from '../i18n/index.js'
 import { getApiErrorMessage } from '../lib/apiErrors.js'
@@ -96,6 +96,8 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
   const ordersPaused = useTerminalStore((state) => state.ordersPaused)
   const setOrdersPaused = useTerminalStore((state) => state.setOrdersPaused)
   const loadBranchStatus = useTerminalStore((state) => state.loadBranchStatus)
+  const logout = useTerminalStore((state) => state.logout)
+  const navigate = useNavigate()
   const language = useI18n((s) => s.language)
   const setLanguage = useI18n((s) => s.setLanguage)
   const t = useI18n((s) => s.t)
@@ -127,6 +129,12 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
 
   const pickLanguage = (lang: Language) => {
     setLanguage(lang)
+  }
+
+  const handleLogout = () => {
+    logout()
+    onClose()
+    navigate('/login', { replace: true })
   }
 
   if (!open) return null
@@ -182,6 +190,10 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
             </button>
           </div>
         </section>
+
+        <button type="button" className="button danger side-menu-btn" onClick={handleLogout}>
+          {t('disconnectTerminal')}
+        </button>
 
         <button type="button" className="button tertiary side-menu-close" onClick={onClose}>
           {t('back')}

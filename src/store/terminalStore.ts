@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { TerminalSession } from '../types/terminal.js'
 import { branchApi } from '../api/branch.js'
+import { useOrderStore } from './orderStore.js'
 
 const STORAGE_KEY = 'concordia_terminal_session'
 
@@ -62,6 +63,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   },
   logout: () => {
     window.localStorage.removeItem(STORAGE_KEY)
+    useOrderStore.getState().clearOrders()
     set(() => ({ ...emptySession(), ordersPaused: false }))
   },
   loadBranchStatus: async (branchId) => {
