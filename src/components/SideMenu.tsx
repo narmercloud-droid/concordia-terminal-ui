@@ -23,7 +23,8 @@ function PrinterSettingsForm() {
       const z = d.zcs
       const k = d.kingtop
       setDiag(
-        `ZCS (Z91): ${z.driverManagerFound ? 'DriverManager found' : 'not found'}\n` +
+        `Sunmi: ${d.sunmi.available ? 'built-in printer OK' : 'not connected'}\n` +
+          `ZCS (Z91): ${z.driverManagerFound ? 'DriverManager found' : 'not found'}\n` +
           `${z.available ? 'ZCS printer OK' : z.lastError || 'ZCS not ready'}\n` +
           `Imagpay: ${k.handlerClassesFound}\n` +
           `${k.available ? `OK (${k.initPath})` : k.lastError || 'not used'}`,

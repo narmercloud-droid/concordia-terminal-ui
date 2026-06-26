@@ -1,8 +1,10 @@
 package de.concordia.terminal;
 
+import android.graphics.Bitmap;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.RemoteException;
+import android.util.Log;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -17,9 +19,13 @@ import com.sunmi.peripheral.printer.SunmiPrinterService;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @CapacitorPlugin(name = "SunmiPrint")
 public class SunmiPrintPlugin extends Plugin {
+    private static final String TAG = "SunmiPrint";
     private SunmiPrinterService sunmiPrinterService;
     private boolean bindRequested = false;
     private final List<PendingPrint> pendingPrints = new ArrayList<>();
@@ -28,11 +34,11 @@ public class SunmiPrintPlugin extends Plugin {
 
     private static class PendingPrint {
         final PluginCall call;
-        final String text;
+        final Runnable action;
 
-        PendingPrint(PluginCall call, String text) {
+        PendingPrint(PluginCall call, Runnable action) {
             this.call = call;
-            this.text = text;
+            this.action = action;
         }
     }
 
@@ -40,11 +46,13 @@ public class SunmiPrintPlugin extends Plugin {
         @Override
         protected void onConnected(SunmiPrinterService service) {
             sunmiPrinterService = service;
+            Log.i(TAG, "Sunmi printer service connected");
             flushPending();
         }
 
         @Override
         protected void onDisconnected() {
+            Log.w(TAG, "Sunmi printer service disconnected");
             sunmiPrinterService = null;
             bindRequested = false;
         }
@@ -55,9 +63,16 @@ public class SunmiPrintPlugin extends Plugin {
         bindRequested = true;
         try {
             InnerPrinterManager.getInstance().bindService(getContext(), innerPrinterCallback);
-        } catch (InnerPrinterException ignored) {
+            Log.i(TAG, "Binding Sunmi printer service");
+        } catch (InnerPrinterException e) {
+            Log.w(TAG, "Failed to bind Sunmi printer service", e);
             bindRequested = false;
         }
+    }
+
+    @Override
+    public void load() {
+        bindPrinterService();
     }
 
     private void flushPending() {
@@ -70,7 +85,7 @@ public class SunmiPrintPlugin extends Plugin {
         List<PendingPrint> prints = new ArrayList<>(pendingPrints);
         pendingPrints.clear();
         for (PendingPrint pending : prints) {
-            executePrint(pending.call, pending.text);
+            pending.action.run();
         }
     }
 
@@ -99,19 +114,31 @@ public class SunmiPrintPlugin extends Plugin {
     @PluginMethod
     public void printText(PluginCall call) {
         String text = call.getString("text", "");
-        bindPrinterService();
-        if (sunmiPrinterService != null) {
-            executePrint(call, text);
-            return;
-        }
-        pendingPrints.add(new PendingPrint(call, text));
-        waitForPrinter(call, text, 0);
+        runWhenReady(call, () -> executePrintText(call, text));
     }
 
-    private void waitForPrinter(PluginCall call, String text, int attempt) {
+    @PluginMethod
+    public void printReceipt(PluginCall call) {
+        String text = call.getString("text", "");
+        String qrUrl = call.getString("qrUrl", "");
+        String footerText = call.getString("footerText", "");
+        runWhenReady(call, () -> executePrintReceipt(call, text, qrUrl, footerText));
+    }
+
+    private void runWhenReady(PluginCall call, Runnable action) {
+        bindPrinterService();
+        if (sunmiPrinterService != null) {
+            action.run();
+            return;
+        }
+        pendingPrints.add(new PendingPrint(call, action));
+        waitForPrinter(call, action, 0);
+    }
+
+    private void waitForPrinter(PluginCall call, Runnable action, int attempt) {
         if (sunmiPrinterService != null) {
             pendingPrints.removeIf((p) -> p.call == call);
-            executePrint(call, text);
+            action.run();
             return;
         }
         if (attempt >= 40) {
@@ -119,58 +146,184 @@ public class SunmiPrintPlugin extends Plugin {
             call.reject("Sunmi printer service not available. Check paper and restart the device.");
             return;
         }
-        mainHandler.postDelayed(() -> waitForPrinter(call, text, attempt + 1), 250);
+        mainHandler.postDelayed(() -> waitForPrinter(call, action, attempt + 1), 250);
     }
 
-    private void executePrint(PluginCall call, String text) {
+    private void executePrintText(PluginCall call, String text) {
         try {
             sunmiPrinterService.printerInit(null);
             sunmiPrinterService.setAlignment(0, null);
-            String printable = text.endsWith("\n") ? text : text + "\n";
-            final boolean[] finished = {false};
-
-            sunmiPrinterService.printText(printable, new InnerResultCallback() {
-                @Override
-                public void onRunResult(boolean isSuccess) {}
-
-                @Override
-                public void onReturnString(String result) {}
-
-                @Override
-                public void onRaiseException(int code, String msg) {
-                    if (!finished[0]) {
-                        finished[0] = true;
-                        call.reject("Printer error " + code + ": " + msg);
-                    }
+            String printable = stripMarkers(text);
+            if (!printable.endsWith("\n")) {
+                printable += "\n";
+            }
+            if (!awaitPrintText(printable)) {
+                if (!call.isReleased()) {
+                    call.reject("Sunmi text print failed");
                 }
-
-                @Override
-                public void onPrintResult(int code, String msg) {
-                    if (!finished[0]) {
-                        finished[0] = true;
-                        if (code == 0) {
-                            JSObject result = new JSObject();
-                            result.put("ok", true);
-                            call.resolve(result);
-                        } else {
-                            call.reject("Print failed (" + code + "): " + msg);
-                        }
-                    }
-                }
-            });
+                return;
+            }
             sunmiPrinterService.lineWrap(4, null);
             sunmiPrinterService.cutPaper(null);
-
-            mainHandler.postDelayed(() -> {
-                if (!finished[0]) {
-                    finished[0] = true;
-                    JSObject result = new JSObject();
-                    result.put("ok", true);
-                    call.resolve(result);
-                }
-            }, 4000);
+            if (!call.isReleased()) {
+                JSObject result = new JSObject();
+                result.put("ok", true);
+                call.resolve(result);
+            }
         } catch (RemoteException e) {
-            call.reject(e.getMessage() != null ? e.getMessage() : "Printer communication failed");
+            if (!call.isReleased()) {
+                call.reject(e.getMessage() != null ? e.getMessage() : "Printer communication failed");
+            }
         }
+    }
+
+    private void executePrintReceipt(PluginCall call, String text, String qrUrl, String footerText) {
+        try {
+            sunmiPrinterService.printerInit(null);
+            boolean printed = false;
+
+            try {
+                Bitmap bitmap = ReceiptBitmapRenderer.render(
+                    text != null ? text : "",
+                    qrUrl != null ? qrUrl.trim() : "",
+                    footerText != null ? footerText : ""
+                );
+                printed = awaitPrintBitmap(bitmap);
+                Log.i(TAG, "Receipt bitmap print => " + printed);
+            } catch (Exception bitmapError) {
+                Log.w(TAG, "Receipt bitmap path failed, using text fallback", bitmapError);
+            }
+
+            if (!printed) {
+                StringBuilder fallback = new StringBuilder(stripMarkers(text != null ? text : ""));
+                if (footerText != null && !footerText.trim().isEmpty()) {
+                    fallback.append('\n').append(stripMarkers(footerText));
+                }
+                printed = awaitPrintText(fallback.toString());
+                Log.i(TAG, "Receipt text fallback => " + printed);
+            }
+
+            sunmiPrinterService.lineWrap(3, null);
+            sunmiPrinterService.cutPaper(null);
+
+            boolean needsQr = qrUrl != null && !qrUrl.trim().isEmpty();
+            if (!printed) {
+                call.reject("Sunmi receipt print failed");
+                return;
+            }
+            JSObject result = new JSObject();
+            result.put("ok", true);
+            result.put("qrPrinted", !needsQr || printed);
+            call.resolve(result);
+        } catch (Exception e) {
+            Log.e(TAG, "Sunmi receipt print failed", e);
+            call.reject(e.getMessage() != null ? e.getMessage() : "Sunmi receipt print failed");
+        }
+    }
+
+    private boolean awaitPrintBitmap(Bitmap bitmap) throws RemoteException, InterruptedException {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean success = new AtomicBoolean(false);
+        AtomicBoolean finished = new AtomicBoolean(false);
+
+        Runnable complete = () -> {
+            if (finished.compareAndSet(false, true)) {
+                latch.countDown();
+            }
+        };
+
+        sunmiPrinterService.printBitmap(bitmap, new InnerResultCallback() {
+            @Override
+            public void onRunResult(boolean isSuccess) {
+                if (isSuccess) {
+                    success.set(true);
+                    complete.run();
+                }
+            }
+
+            @Override
+            public void onReturnString(String result) {}
+
+            @Override
+            public void onRaiseException(int code, String msg) {
+                Log.w(TAG, "printBitmap exception " + code + ": " + msg);
+                success.set(false);
+                complete.run();
+            }
+
+            @Override
+            public void onPrintResult(int code, String msg) {
+                Log.i(TAG, "printBitmap result " + code + ": " + msg);
+                success.set(code == 0);
+                complete.run();
+            }
+        });
+
+        boolean completed = latch.await(12, TimeUnit.SECONDS);
+        if (!completed) {
+            Log.w(TAG, "printBitmap timed out waiting for callback");
+        }
+        return success.get();
+    }
+
+    private boolean awaitPrintText(String printable) throws RemoteException {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean success = new AtomicBoolean(false);
+        AtomicBoolean finished = new AtomicBoolean(false);
+
+        Runnable complete = () -> {
+            if (finished.compareAndSet(false, true)) {
+                latch.countDown();
+            }
+        };
+
+        sunmiPrinterService.printText(printable, new InnerResultCallback() {
+            @Override
+            public void onRunResult(boolean isSuccess) {
+                if (isSuccess) {
+                    success.set(true);
+                    complete.run();
+                }
+            }
+
+            @Override
+            public void onReturnString(String result) {}
+
+            @Override
+            public void onRaiseException(int printCode, String msg) {
+                Log.w(TAG, "printText exception " + printCode + ": " + msg);
+                success.set(false);
+                complete.run();
+            }
+
+            @Override
+            public void onPrintResult(int printCode, String msg) {
+                Log.i(TAG, "printText result " + printCode + ": " + msg);
+                success.set(printCode == 0);
+                complete.run();
+            }
+        });
+
+        try {
+            boolean completed = latch.await(12, TimeUnit.SECONDS);
+            if (!completed) {
+                Log.w(TAG, "printText timed out waiting for callback");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+        return success.get();
+    }
+
+    private static String stripMarkers(String text) {
+        if (text == null) return "";
+        return text
+            .replace("@@TIGHT@@", "")
+            .replace("@@BOLD_CENTER@@", "")
+            .replace("@@XL@@", "")
+            .replace("@@LARGE@@", "")
+            .replace("@@CENTER@@", "")
+            .replace("@@BOLD@@", "");
     }
 }

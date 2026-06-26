@@ -8,6 +8,12 @@ export interface SunmiPrintPlugin {
 
   printText(options: { text: string }): Promise<{ ok: boolean }>
 
+  printReceipt?(options: {
+    text: string
+    qrUrl?: string
+    footerText?: string
+  }): Promise<{ ok: boolean; qrPrinted?: boolean }>
+
 }
 
 
