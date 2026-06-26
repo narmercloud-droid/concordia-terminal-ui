@@ -1,21 +1,17 @@
 import { http } from './http.js'
-import { useTerminalStore } from '../store/terminalStore.js'
 
-const WARMUP_MS = 3 * 60 * 1000
+/** Render spins down after ~15 min idle; ping every minute while the terminal is logged in. */
+const WARMUP_MS = 60 * 1000
 
 let timer: number | null = null
 
-/** Keep Render backend warm so status updates respond in ~2s instead of ~30s. */
+/** Keep Render + Neon warm so API calls respond in ~1–2s instead of ~30s after idle. */
 export function startBackendWarmup() {
   stopBackendWarmup()
   const ping = () => {
-    const branchId = useTerminalStore.getState().branch_id
-    if (!branchId) return
-    void http
-      .get('/api/terminal/branch/status', { params: { branchId }, timeout: 8_000 })
-      .catch(() => {
-        // best-effort
-      })
+    void http.get('/health', { timeout: 8_000 }).catch(() => {
+      // best-effort
+    })
   }
   ping()
   timer = window.setInterval(ping, WARMUP_MS)

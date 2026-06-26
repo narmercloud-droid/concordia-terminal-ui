@@ -11,11 +11,9 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
-import java.io.ByteArrayOutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 /**
  * Kingtop Z91 built-in printer via ZCS SDK (same stack as com.szzcs.smartpos on device).
@@ -24,12 +22,25 @@ import java.util.Arrays;
 public class ZcsPrintPlugin extends Plugin {
     private static final String TAG = "ZcsPrint";
     private static final String SMART_POS_PACKAGE = "com.szzcs.smartpos";
+    private static final String ZCS_PRINT_PACKAGE = "com.zcs.printer";
     private static final Charset PRINT_CHARSET = Charset.forName("GBK");
+
+    static {
+        try {
+            System.loadLibrary("SmartPosJni");
+            Log.i(TAG, "Loaded bundled libSmartPosJni");
+        } catch (UnsatisfiedLinkError e) {
+            Log.w(TAG, "Bundled libSmartPosJni unavailable", e);
+        }
+    }
+
+    private final Object printLock = new Object();
 
     private String lastError = "SDK not initialized";
     private ClassLoader sdkLoader;
     private Object printer;
     private Class<?> formatClass;
+    private boolean printerSessionReady = false;
 
     private ClassLoader resolveSdkLoader() throws Exception {
         if (sdkLoader != null) return sdkLoader;
@@ -40,16 +51,25 @@ public class ZcsPrintPlugin extends Plugin {
             Log.i(TAG, "ZCS SDK on app classpath");
             return sdkLoader;
         } catch (ClassNotFoundException ignored) {
-            // expected — SDK ships in vendor demo app
+            // expected — SDK ships in vendor APKs on device
         }
 
-        Context pkgContext = getContext().createPackageContext(
-            SMART_POS_PACKAGE,
-            Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY
-        );
-        sdkLoader = pkgContext.getClassLoader();
-        Log.i(TAG, "ZCS SDK loaded from " + SMART_POS_PACKAGE);
-        return sdkLoader;
+        for (String pkg : new String[] { ZCS_PRINT_PACKAGE, SMART_POS_PACKAGE }) {
+            try {
+                Context pkgContext = getContext().createPackageContext(
+                    pkg,
+                    Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY
+                );
+                Class.forName("com.zcs.sdk.DriverManager", true, pkgContext.getClassLoader());
+                sdkLoader = pkgContext.getClassLoader();
+                Log.i(TAG, "ZCS SDK loaded from " + pkg);
+                return sdkLoader;
+            } catch (Exception e) {
+                Log.w(TAG, "Could not load ZCS SDK from " + pkg, e);
+            }
+        }
+
+        throw new ClassNotFoundException("ZCS DriverManager not found in app or vendor packages");
     }
 
     private Class<?> loadSdkClass(String name) throws Exception {
@@ -65,6 +85,22 @@ public class ZcsPrintPlugin extends Plugin {
             throw new IllegalStateException("SmartPosJni not ready");
         }
 
+        try {
+            Method setUart = jni.getClass().getMethod("sdkSetUartSpeed", int.class);
+            int uartCode = (Integer) setUart.invoke(jni, 460800);
+            Log.i(TAG, "sdkSetUartSpeed(460800) => " + uartCode);
+        } catch (NoSuchMethodException ignored) {
+            // optional on older firmware
+        }
+
+        try {
+            Method sysInitialize = jni.getClass().getMethod("sdkSysInitialize");
+            int initCode = (Integer) sysInitialize.invoke(jni);
+            Log.i(TAG, "sdkSysInitialize => " + initCode);
+        } catch (NoSuchMethodException ignored) {
+            // optional on older firmware
+        }
+
         Method sysInit = jni.getClass().getMethod("sdkSysInit");
         int code = (Integer) sysInit.invoke(jni);
         Log.i(TAG, "sdkSysInit => " + code);
@@ -76,18 +112,13 @@ public class ZcsPrintPlugin extends Plugin {
     private synchronized void resetPrinterSession() {
         printer = null;
         formatClass = null;
+        printerSessionReady = false;
         lastError = "SDK not initialized";
     }
 
     private synchronized boolean ensureReady() {
         if (printer != null && formatClass != null) {
-            try {
-                ensureSysInit();
-                return true;
-            } catch (Exception e) {
-                Log.w(TAG, "Re-init before print failed, rebuilding printer session", e);
-                resetPrinterSession();
-            }
+            return true;
         }
 
         try {
@@ -104,6 +135,7 @@ public class ZcsPrintPlugin extends Plugin {
 
             formatClass = loadSdkClass("com.zcs.sdk.q.b");
             ensureSysInit();
+            printerSessionReady = false;
             lastError = "";
             Log.i(TAG, "ZCS printer ready via " + printer.getClass().getName());
             return true;
@@ -202,6 +234,13 @@ public class ZcsPrintPlugin extends Plugin {
     }
 
     private void printViaBitmapBuffer(String text) throws Exception {
+        printViaBitmapBuffer(text, true);
+    }
+
+    /**
+     * @param finalize when false (QR follows), skip SDK flush — it throws on Z91 and blocks the QR job.
+     */
+    private void printViaBitmapBuffer(String text, boolean finalize) throws Exception {
         Method printLine = printer.getClass().getMethod("a", String.class, formatClass);
         String normalized = text.replace("\r\n", "\n");
 
@@ -223,75 +262,280 @@ public class ZcsPrintPlugin extends Plugin {
             }
         }
 
-        flushPrinter();
+        if (finalize) {
+            safeFlushPrinter();
+        } else {
+            forwardPaperSafe(16);
+        }
     }
 
-    /** Send raster data; Z91 needs heavy paper feed — flush after raw bytes crashes. */
-    private boolean printBitmapViaEscPos(Bitmap bitmap) {
+    private static int parseResultCode(Object result) {
+        if (result instanceof Integer) return (Integer) result;
+        if (result instanceof Number) return ((Number) result).intValue();
         try {
-            byte[] payload = EscPosBitmapEncoder.encode(bitmap, ReceiptBitmapRenderer.PAPER_WIDTH);
-            printRawBytes(payload, false);
-            forwardPaper(120);
-            Log.i(TAG, "Sent raster bitmap " + bitmap.getWidth() + "x" + bitmap.getHeight());
-            return true;
+            return Integer.parseInt(String.valueOf(result));
+        } catch (Exception ignored) {
+            return 0;
+        }
+    }
+
+    private static boolean isSuccessCode(int code) {
+        return code >= 0;
+    }
+
+    private int invokeJni(String methodName, Class<?>[] paramTypes, Object... args) throws Exception {
+        Object jni = getJni();
+        if (jni == null) {
+            throw new IllegalStateException("SmartPosJni not initialized");
+        }
+        Method method = jni.getClass().getMethod(methodName, paramTypes);
+        return parseResultCode(method.invoke(jni, args));
+    }
+
+    /** Z91 built-in printer must be powered before any print API accepts jobs. */
+    private void wakePrinter() throws Exception {
+        ensureSysInit();
+        try {
+            int volts = invokeJni("sdkZ91mVoltsOn", new Class<?>[0]);
+            Log.i(TAG, "sdkZ91mVoltsOn => " + volts);
+        } catch (NoSuchMethodException ignored) {
+            // not a Z91-class device
+        }
+        try {
+            int selected = invokeJni("sdkSelectPrnId", new Class<?>[]{int.class}, 0);
+            Log.i(TAG, "sdkSelectPrnId(0) => " + selected);
+        } catch (NoSuchMethodException ignored) {
+            // optional on this firmware
+        }
+        for (int prnType : new int[] { 0, 1, 2 }) {
+            try {
+                int setType = invokeJni("sdkSetPrnType", new Class<?>[]{int.class}, prnType);
+                Log.i(TAG, "sdkSetPrnType(" + prnType + ") => " + setType);
+                if (isSuccessCode(setType)) {
+                    break;
+                }
+            } catch (NoSuchMethodException ignored) {
+                break;
+            }
+        }
+        try {
+            int status = invokeJni("sdkPrnStatus", new Class<?>[0]);
+            Log.i(TAG, "sdkPrnStatus => " + status);
+        } catch (NoSuchMethodException ignored) {
+            // optional on this firmware
+        }
+        if (!printerSessionReady) {
+            Thread.sleep(80);
+            printerSessionReady = true;
+        }
+    }
+
+    private void beginPrintJob() throws Exception {
+        prepareForPrint();
+        wakePrinter();
+        applyPrintSettings();
+    }
+
+    private int invokePrinterBytes(byte[] payload, boolean nullTerminated) throws Exception {
+        Method printBytes = printer.getClass().getMethod("c", byte[].class);
+        byte[] data = nullTerminated
+            ? Arrays.copyOf(payload, payload.length + 1)
+            : payload;
+        int code = parseResultCode(printBytes.invoke(printer, (Object) data));
+        Log.i(TAG, "ZCS c([B]) len=" + payload.length + " => " + code);
+        return code;
+    }
+
+    private int invokeJniPrnStr(String text) throws Exception {
+        Object jni = getJni();
+        Method prnStr = jni.getClass().getMethod("sdkPrnStr", byte[].class);
+        byte[] payload = text.getBytes(PRINT_CHARSET);
+        byte[] withNull = Arrays.copyOf(payload, payload.length + 1);
+        int code = parseResultCode(prnStr.invoke(jni, (Object) withNull));
+        Log.i(TAG, "sdkPrnStr len=" + payload.length + " => " + code);
+        return code;
+    }
+
+    private void feedPaperSafe(int dots) {
+        try {
+            feedPaper(dots);
         } catch (Exception e) {
-            Log.w(TAG, "Raster bitmap send failed", e);
-            return false;
+            Log.w(TAG, "Paper feed after print failed (non-fatal)", e);
+        }
+    }
+
+    private void forwardPaperSafe(int dots) {
+        try {
+            forwardPaper(dots);
+        } catch (Exception e) {
+            Log.w(TAG, "forwardPaper failed (non-fatal)", e);
+        }
+    }
+
+    /** Bitmap/QR jobs queue until paper moves — retry when the head returns -1406 (busy). */
+    private boolean commitPrintedOutput() {
+        for (int attempt = 0; attempt < 4; attempt++) {
+            try {
+                int code = invokeJni("sdkPrnPaperForward", new Class<?>[]{int.class}, 28);
+                Log.i(TAG, "commitPrintedOutput attempt " + attempt + " => " + code);
+                if (isSuccessCode(code)) {
+                    return true;
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "commitPrintedOutput attempt " + attempt + " failed", e);
+            }
+            try {
+                Thread.sleep(90L * (attempt + 1));
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private void feedPaper(int dots) throws Exception {
+        int code = invokeJni("sdkPrnPaperForward", new Class<?>[]{int.class}, dots);
+        Log.i(TAG, "sdkPrnPaperForward(" + dots + ") => " + code);
+        if (!isSuccessCode(code)) {
+            throw new IllegalStateException("Paper feed failed with code " + code);
         }
     }
 
     private void printViaRawBytes(String text) throws Exception {
-        Class<?> printerClass = loadSdkClass("com.zcs.sdk.g");
-        Field jniField = printerClass.getDeclaredField("g");
-        jniField.setAccessible(true);
-        Object jni = jniField.get(null);
-        if (jni == null) {
-            throw new IllegalStateException("SmartPosJni not initialized");
+        applyPrintSettings();
+
+        int code = invokeJniPrnStr(text);
+        if (!isSuccessCode(code)) {
+            code = invokePrinterBytes(text.getBytes(PRINT_CHARSET), true);
+        }
+        if (!isSuccessCode(code)) {
+            throw new IllegalStateException("ZCS raw print failed with code " + code);
         }
 
-        Method printBytes = printer.getClass().getMethod("c", byte[].class);
-        byte[] payload = text.getBytes(PRINT_CHARSET);
-        byte[] withNull = Arrays.copyOf(payload, payload.length + 1);
-        Object prnResult = printBytes.invoke(printer, (Object) withNull);
-        Log.i(TAG, "ZCS c([B]) => " + String.valueOf(prnResult));
-
-        Method paperForward = jni.getClass().getMethod("sdkPrnPaperForward", int.class);
-        Object feedResult = paperForward.invoke(jni, 120);
-        Log.i(TAG, "sdkPrnPaperForward => " + String.valueOf(feedResult));
+        // sdkPrnStr queues text — flush when possible, but always feed paper.
+        commitPrintBuffer("sdkPrnStr");
+        feedPaperSafe(32);
     }
 
     private void prepareForPrint() throws Exception {
         if (!ensureReady()) {
             throw new IllegalStateException(lastError);
         }
-        ensureSysInit();
     }
 
-    /** Simple ASCII test strings — raw bytes first (works on Z91). */
+    /** Simple text — SDK line buffer first (fast, correct layout). */
     private void printTextInternal(String text) throws Exception {
-        prepareForPrint();
-
-        Exception rawError = null;
-        try {
-            printViaRawBytes(text);
-            return;
-        } catch (Exception e) {
-            rawError = e;
-            Log.w(TAG, "Raw byte print failed, trying bitmap buffer", e);
-        }
-
-        try {
-            printViaBitmapBuffer(text);
-        } catch (Exception bitmapError) {
-            if (rawError != null) {
-                bitmapError.addSuppressed(rawError);
+        synchronized (printLock) {
+            beginPrintJob();
+            try {
+                printViaBitmapBuffer(text);
+            } catch (Exception lineError) {
+                Log.w(TAG, "Line buffer failed, using raw text", lineError);
+                printViaRawBytes(text);
             }
-            throw bitmapError;
+            feedPaperSafe(32);
         }
     }
 
-    private boolean printReceiptBitmap(Bitmap bitmap) {
-        return printBitmapViaEscPos(bitmap);
+    private void applyPrintSettings() throws Exception {
+        try {
+            int gray = invokeJni("sdkPrnSetGray", new Class<?>[]{int.class}, 6);
+            Log.i(TAG, "sdkPrnSetGray(6) => " + gray);
+        } catch (NoSuchMethodException ignored) {
+            // optional on this firmware
+        }
+        try {
+            int align = invokeJni("sdkPrnSetAlign", new Class<?>[]{int.class}, 1);
+            Log.i(TAG, "sdkPrnSetAlign(1) => " + align);
+        } catch (NoSuchMethodException ignored) {
+            // optional on this firmware
+        }
+    }
+
+    private Method findDeclaredMethod(Class<?> cls, String name, Class<?>... paramTypes) throws Exception {
+        Method method = cls.getDeclaredMethod(name, paramTypes);
+        method.setAccessible(true);
+        return method;
+    }
+
+    private boolean printSdkBitmap(Bitmap bitmap) throws Exception {
+        if (bitmap == null || bitmap.getWidth() <= 0 || bitmap.getHeight() <= 0) {
+            return false;
+        }
+        Class<?> printerClass = printer.getClass();
+
+        try {
+            Method single = findDeclaredMethod(printerClass, "a", Bitmap.class);
+            int code = parseResultCode(single.invoke(printer, bitmap));
+            Log.i(TAG, "SDK a(Bitmap) => " + code);
+            if (isSuccessCode(code) && commitPrintedOutput()) {
+                return true;
+            }
+        } catch (NoSuchMethodException ignored) {
+            // try other overloads
+        }
+
+        for (Method method : printerClass.getDeclaredMethods()) {
+            if (!"a".equals(method.getName())) continue;
+            Class<?>[] params = method.getParameterTypes();
+            Object result;
+            if (params.length == 2
+                && Bitmap.class.isAssignableFrom(params[0])
+                && params[1] == boolean.class) {
+                method.setAccessible(true);
+                result = method.invoke(printer, bitmap, false);
+            } else if (params.length == 3
+                && Bitmap.class.isAssignableFrom(params[0])
+                && params[1] == byte.class
+                && params[2] == boolean.class) {
+                method.setAccessible(true);
+                result = method.invoke(printer, bitmap, (byte) 0, false);
+            } else {
+                continue;
+            }
+            int code = parseResultCode(result);
+            Log.i(TAG, "SDK bitmap print => " + code + " (" + bitmap.getWidth() + "x" + bitmap.getHeight() + ")");
+            if (!isSuccessCode(code)) {
+                continue;
+            }
+            if (commitPrintedOutput()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private byte[] encodeVendorBitmap(Bitmap bitmap) throws Exception {
+        Method encode = findDeclaredMethod(printer.getClass(), "b", Bitmap.class, boolean.class);
+        byte[] payload = (byte[]) encode.invoke(printer, bitmap, false);
+        if (payload == null || payload.length == 0) {
+            throw new IllegalStateException("Vendor bitmap encoder returned empty payload");
+        }
+        Log.i(TAG, "Vendor bitmap encoded, len=" + payload.length);
+        return payload;
+    }
+
+    private boolean printVendorBytePayload(byte[] payload) throws Exception {
+        Method printBytes = findDeclaredMethod(printer.getClass(), "a", byte[].class);
+        int code = parseResultCode(printBytes.invoke(printer, payload));
+        Log.i(TAG, "SDK a([B]) len=" + payload.length + " => " + code);
+        return isSuccessCode(code);
+    }
+
+    private boolean printJniBitmapPayload(Bitmap bitmap) throws Exception {
+        byte[] payload = encodeVendorBitmap(bitmap);
+        Object jni = getJni();
+        Method method = jni.getClass().getMethod("sdkPrnBitmap", byte[].class, int.class);
+        int jniCode = parseResultCode(method.invoke(jni, payload, payload.length));
+        Log.i(TAG, "sdkPrnBitmap payload=" + payload.length + " => " + jniCode);
+        if (isSuccessCode(jniCode) && commitPrintedOutput()) {
+            return true;
+        }
+        if (printVendorBytePayload(payload) && commitPrintedOutput()) {
+            return true;
+        }
+        return false;
     }
 
     @PluginMethod
@@ -322,75 +566,32 @@ public class ZcsPrintPlugin extends Plugin {
         call.resolve(result);
     }
 
-    private byte[] buildEscPosQrPayload(String data) throws Exception {
-        byte[] content = data.getBytes(StandardCharsets.UTF_8);
-        ByteArrayOutputStream buf = new ByteArrayOutputStream();
-        // Center alignment
-        buf.write(new byte[]{0x1B, 0x61, 0x01});
-        // QR model 2
-        buf.write(new byte[]{0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00});
-        // Module size
-        buf.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x06});
-        // Error correction M
-        buf.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31});
-        // Store data
-        int storeLen = content.length + 3;
-        buf.write(0x1D);
-        buf.write(0x28);
-        buf.write(0x6B);
-        buf.write(storeLen & 0xFF);
-        buf.write((storeLen >> 8) & 0xFF);
-        buf.write(new byte[]{0x31, 0x50, 0x30});
-        buf.write(content);
-        // Print QR
-        buf.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30});
-        // Left align + feed
-        buf.write(new byte[]{0x1B, 0x61, 0x00});
-        buf.write(new byte[]{0x1B, 0x64, 0x03});
-        return buf.toByteArray();
-    }
-
-    private boolean tryPrintBitmap(Bitmap bitmap) throws Exception {
-        for (Method method : printer.getClass().getMethods()) {
-            Class<?>[] params = method.getParameterTypes();
-            if (params.length == 1 && Bitmap.class.isAssignableFrom(params[0])) {
-                method.invoke(printer, bitmap);
-                commitPrintBuffer("SDK Bitmap " + method.getName());
-                return true;
-            }
-            if (params.length == 2 && Bitmap.class.isAssignableFrom(params[0])
-                && params[1].isAssignableFrom(formatClass)) {
-                Object format = buildFormat(30, Layout.Alignment.ALIGN_CENTER);
-                method.invoke(printer, bitmap, format);
-                commitPrintBuffer("SDK Bitmap " + method.getName() + "+Format");
-                return true;
-            }
-        }
-        return false;
-    }
-
     /** Flush line-buffer jobs; after raw bytes on Z91 flush throws — feed paper instead. */
-    private void commitPrintBuffer(String context) throws Exception {
+    private boolean commitPrintBuffer(String context) {
         try {
             flushPrinter();
             Log.i(TAG, "Committed print buffer: " + context);
+            return true;
         } catch (Exception e) {
             Log.w(TAG, "flush failed for " + context + ", feeding paper", e);
-            forwardPaper(120);
+            try {
+                forwardPaper(24);
+            } catch (Exception feedError) {
+                Log.w(TAG, "forwardPaper after flush failure also failed", feedError);
+            }
+            return false;
         }
     }
 
-    /** Rough pixel height — unused on Z91; line buffer is used for receipt body. */
-    private static int estimateBodyHeightPx(String text) {
-        if (text == null || text.isEmpty()) return 0;
-        int lines = text.replace("\r\n", "\n").split("\n", -1).length;
-        return lines * 34 + 80;
+    private void printFooterSafe(String footer) throws Exception {
+        if (footer == null || footer.trim().isEmpty()) return;
+        printViaBitmapBuffer(footer);
     }
 
-    /**
-     * Print driver QR + footer after the receipt body.
-     * Z91: never call flushPrinter() after raw ESC/POS bytes — it throws and aborts QR.
-     */
+  /**
+   * Z91 driver QR: SDK a(Bitmap) then vendor raster + sdkPrnBitmap, with paper-feed commit retries.
+   * Do not flush here — flush after the text body breaks the following bitmap job on Z91.
+   */
     private boolean printQrBlock(String qrUrl, String footerText) {
         if (qrUrl == null || qrUrl.trim().isEmpty()) {
             Log.w(TAG, "QR skipped — empty URL");
@@ -400,81 +601,89 @@ public class ZcsPrintPlugin extends Plugin {
         String footer = footerText != null ? footerText.trim() : "";
         Log.i(TAG, "Printing QR block, urlLen=" + url.length() + " footerLen=" + footer.length());
 
+        forwardPaperSafe(12);
+
+        Bitmap qr;
         try {
-            forwardPaper(8);
-        } catch (Exception feedError) {
-            Log.w(TAG, "Paper forward before QR failed", feedError);
+            qr = ReceiptBitmapRenderer.createQrBitmap(url, 200);
+        } catch (Exception encodeError) {
+            Log.e(TAG, "QR bitmap encode failed", encodeError);
+            return false;
         }
 
         try {
-            Bitmap qr = ReceiptBitmapRenderer.createQrBitmap(url, 200);
-            if (tryPrintBitmap(qr)) {
-                if (!footer.isEmpty()) {
-                    printViaBitmapBuffer(footer);
-                }
-                Log.i(TAG, "QR printed via SDK Bitmap API");
+            if (printSdkBitmap(qr)) {
+                Log.i(TAG, "QR via SDK a(Bitmap)");
+                printFooterIfNeeded(footer);
                 return true;
             }
         } catch (Exception sdkError) {
-            Log.w(TAG, "SDK Bitmap QR failed", sdkError);
+            Log.w(TAG, "SDK QR bitmap failed", sdkError);
         }
 
         try {
-            printEscPosQr(url);
-            if (!footer.isEmpty()) {
-                printViaBitmapBuffer(footer);
-            }
-            Log.i(TAG, "QR printed via ESC/POS command");
-            return true;
-        } catch (Exception escPosError) {
-            Log.w(TAG, "ESC/POS QR command failed, trying raster", escPosError);
-        }
-
-        try {
-            Bitmap qrFooter = ReceiptBitmapRenderer.render("", url, footer);
-            if (printBitmapViaEscPos(qrFooter)) {
-                Log.i(TAG, "QR printed via ESC/POS raster (QR + footer)");
+            if (printJniBitmapPayload(qr)) {
+                Log.i(TAG, "QR via vendor raster");
+                printFooterIfNeeded(footer);
                 return true;
             }
-        } catch (Exception rasterError) {
-            Log.w(TAG, "Raster QR+footer failed", rasterError);
+        } catch (Exception vendorError) {
+            Log.w(TAG, "Vendor QR raster failed", vendorError);
         }
 
-        try {
-            Bitmap qrOnly = ReceiptBitmapRenderer.createQrBitmap(url, 200);
-            if (printBitmapViaEscPos(qrOnly)) {
-                if (!footer.isEmpty()) {
-                    printViaBitmapBuffer(footer);
-                }
-                Log.i(TAG, "QR printed via ESC/POS raster (QR only)");
-                return true;
-            }
-        } catch (Exception qrOnlyError) {
-            Log.e(TAG, "All QR print methods failed", qrOnlyError);
-        }
+        Log.e(TAG, "QR print failed — SDK and vendor bitmap paths exhausted");
         return false;
     }
 
-    private void printReceiptInternal(String text, String qrUrl, String footerText) throws Exception {
-        prepareForPrint();
-
-        String trimmedQr = qrUrl != null ? qrUrl.trim() : "";
-        String trimmedFooter = footerText != null ? footerText.trim() : "";
-        boolean hasQr = !trimmedQr.isEmpty();
-
-        Log.i(TAG, "printReceipt qrPresent=" + hasQr + " footerLen=" + trimmedFooter.length());
-
-        // Z91: line-by-line SDK buffer is the only reliable path for the receipt body.
-        // ESC/POS raster reports success but does not eject without flush (which crashes).
-        printViaBitmapBuffer(text);
-
-        if (hasQr) {
-            printQrBlock(trimmedQr, trimmedFooter);
-        } else if (!trimmedFooter.isEmpty()) {
-            printViaBitmapBuffer(trimmedFooter);
+    private void printFooterIfNeeded(String footer) {
+        if (footer.isEmpty()) return;
+        try {
+            printFooterSafe(footer);
+        } catch (Exception footerError) {
+            Log.w(TAG, "QR footer print failed", footerError);
         }
+    }
 
-        forwardPaper(48);
+    private static class ReceiptPrintResult {
+        final boolean bodyPrinted;
+        final boolean qrPrinted;
+
+        ReceiptPrintResult(boolean bodyPrinted, boolean qrPrinted) {
+            this.bodyPrinted = bodyPrinted;
+            this.qrPrinted = qrPrinted;
+        }
+    }
+
+    private ReceiptPrintResult printReceiptInternal(String text, String qrUrl, String footerText) throws Exception {
+        synchronized (printLock) {
+            String trimmedQr = qrUrl != null ? qrUrl.trim() : "";
+            String trimmedFooter = footerText != null ? footerText.trim() : "";
+            boolean hasQr = !trimmedQr.isEmpty();
+
+            Log.i(TAG, "printReceipt qrPresent=" + hasQr + " footerLen=" + trimmedFooter.length());
+
+            beginPrintJob();
+
+            boolean bodyPrinted;
+            try {
+                printViaBitmapBuffer(text, !hasQr);
+                bodyPrinted = true;
+            } catch (Exception lineError) {
+                Log.w(TAG, "Line buffer failed, trying raw text", lineError);
+                printViaRawBytes(text);
+                bodyPrinted = true;
+            }
+
+            boolean qrPrinted = true;
+            if (hasQr) {
+                qrPrinted = printQrBlock(trimmedQr, trimmedFooter);
+            } else if (!trimmedFooter.isEmpty()) {
+                printFooterSafe(trimmedFooter);
+            }
+
+            feedPaperSafe(32);
+            return new ReceiptPrintResult(bodyPrinted, qrPrinted);
+        }
     }
 
     private Object getJni() throws Exception {
@@ -510,22 +719,6 @@ public class ZcsPrintPlugin extends Plugin {
         paperForward.invoke(jni, dots);
     }
 
-    private void printRawBytes(byte[] payload, boolean nullTerminated) throws Exception {
-        Method printBytes = printer.getClass().getMethod("c", byte[].class);
-        byte[] data = nullTerminated
-            ? Arrays.copyOf(payload, payload.length + 1)
-            : payload;
-        Object prnResult = printBytes.invoke(printer, (Object) data);
-        Log.i(TAG, "ZCS c([B]) len=" + payload.length + " => " + String.valueOf(prnResult));
-    }
-
-    private void printEscPosQr(String qrUrl) throws Exception {
-        byte[] payload = buildEscPosQrPayload(qrUrl);
-        printRawBytes(payload, false);
-        forwardPaper(120);
-        Log.i(TAG, "Sent ESC/POS QR payload, len=" + payload.length);
-    }
-
     @PluginMethod
     public void printText(PluginCall call) {
         String text = call.getString("text", "");
@@ -559,13 +752,20 @@ public class ZcsPrintPlugin extends Plugin {
 
         new Thread(() -> {
             try {
-                printReceiptInternal(text, qrUrl, footerText);
+                ReceiptPrintResult printed = printReceiptInternal(text, qrUrl, footerText);
+                String trimmedQr = qrUrl != null ? qrUrl.trim() : "";
+                boolean needsQr = !trimmedQr.isEmpty();
                 JSObject result = new JSObject();
-                result.put("ok", true);
+                result.put("ok", printed.bodyPrinted);
+                result.put("qrPrinted", !needsQr || printed.qrPrinted);
                 resolveOnMain(call, result);
             } catch (Exception e) {
                 Log.e(TAG, "ZCS receipt print failed", e);
-                rejectOnMain(call, "ZCS receipt print failed: " + e.getMessage());
+                String msg = e.getMessage() != null ? e.getMessage() : "Print failed";
+                if (msg.contains("-1403")) {
+                    msg = "Printer not ready (check paper roll and cover closed)";
+                }
+                rejectOnMain(call, "ZCS receipt print failed: " + msg);
             }
         }).start();
     }

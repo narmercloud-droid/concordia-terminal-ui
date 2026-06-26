@@ -57,18 +57,20 @@ export async function printOrderReceipt(
     if (!zcs.available && zcs.reason) zcsReason = zcs.reason
     if (zcs.available) {
       const printed = await printReceiptOnPlugin(ZcsPrint, receipt)
-      if (needsQr && !printed.qrPrinted) {
-        return {
-          ok: false,
-          error: 'Delivery QR did not print',
-          driver: 'zcs',
-          qrPrinted: false,
-        }
-      }
       if (!printed.ok) {
-        return { ok: false, error: 'Receipt print failed', driver: 'zcs', qrPrinted: false }
+        // ZCS init succeeds but print can still fail — try Kingtop/Imagpay path.
+        console.warn('ZCS receipt body failed, trying Kingtop driver')
+      } else {
+        if (needsQr && !printed.qrPrinted) {
+          return {
+            ok: false,
+            error: 'Delivery QR did not print',
+            driver: 'zcs',
+            qrPrinted: false,
+          }
+        }
+        return { ok: true, driver: 'zcs', qrPrinted: printed.qrPrinted }
       }
-      return { ok: true, driver: 'zcs', qrPrinted: printed.qrPrinted }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'ZCS print failed'
