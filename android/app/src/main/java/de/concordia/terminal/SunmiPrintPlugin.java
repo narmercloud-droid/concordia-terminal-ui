@@ -181,6 +181,7 @@ public class SunmiPrintPlugin extends Plugin {
         try {
             sunmiPrinterService.printerInit(null);
             boolean printed = false;
+            boolean bitmapAttempted = false;
 
             try {
                 Bitmap bitmap = ReceiptBitmapRenderer.render(
@@ -188,13 +189,16 @@ public class SunmiPrintPlugin extends Plugin {
                     qrUrl != null ? qrUrl.trim() : "",
                     footerText != null ? footerText : ""
                 );
+                bitmapAttempted = true;
                 printed = awaitPrintBitmap(bitmap);
                 Log.i(TAG, "Receipt bitmap print => " + printed);
             } catch (Exception bitmapError) {
-                Log.w(TAG, "Receipt bitmap path failed, using text fallback", bitmapError);
+                Log.w(TAG, "Receipt bitmap render failed, using text fallback", bitmapError);
             }
 
-            if (!printed) {
+            // Only fall back to plain text when bitmap rendering failed — never when
+            // printBitmap was already submitted (avoids double bon on callback race).
+            if (!bitmapAttempted) {
                 StringBuilder fallback = new StringBuilder(stripMarkers(text != null ? text : ""));
                 if (footerText != null && !footerText.trim().isEmpty()) {
                     fallback.append('\n').append(stripMarkers(footerText));
@@ -235,10 +239,8 @@ public class SunmiPrintPlugin extends Plugin {
         sunmiPrinterService.printBitmap(bitmap, new InnerResultCallback() {
             @Override
             public void onRunResult(boolean isSuccess) {
-                if (isSuccess) {
-                    success.set(true);
-                    complete.run();
-                }
+                // Ignore — onPrintResult is authoritative; early onRunResult(false)
+                // previously triggered text fallback while bitmap was still printing.
             }
 
             @Override
@@ -280,10 +282,7 @@ public class SunmiPrintPlugin extends Plugin {
         sunmiPrinterService.printText(printable, new InnerResultCallback() {
             @Override
             public void onRunResult(boolean isSuccess) {
-                if (isSuccess) {
-                    success.set(true);
-                    complete.run();
-                }
+                // Ignore — wait for onPrintResult.
             }
 
             @Override

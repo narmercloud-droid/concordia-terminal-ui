@@ -142,10 +142,9 @@ function itemModifiers(item: OrderItem): OrderItem['extras'] {
 }
 
 function itemLineTotal(item: OrderItem): number {
-  const mods = itemModifiers(item) ?? []
-  const modTotal = mods.reduce((sum, m) => sum + m.price, 0)
-  const variantTotal = (item.variants ?? []).reduce((sum, v) => sum + (v.price ?? 0), 0)
-  return item.quantity * (item.price + modTotal + variantTotal)
+  // Backend stores the full unit price in `price` (variant base + extras included).
+  // Variants/extras rows are kitchen labels — do not add their prices again.
+  return item.quantity * item.price
 }
 
 function formatItemBlock(item: OrderItem): string[] {

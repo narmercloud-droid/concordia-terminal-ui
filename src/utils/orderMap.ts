@@ -38,10 +38,7 @@ function mapLine(line: any): OrderItem {
 }
 
 function lineSubtotal(item: OrderItem): number {
-  const mods = [...(item.extras ?? []), ...(item.toppings ?? [])]
-  const modTotal = mods.reduce((sum, m) => sum + m.price, 0)
-  const variantTotal = (item.variants ?? []).reduce((sum, v) => sum + (v.price ?? 0), 0)
-  return item.quantity * (item.price + modTotal + variantTotal)
+  return item.quantity * item.price
 }
 
 function computeSubtotal(items: OrderItem[]): number {
