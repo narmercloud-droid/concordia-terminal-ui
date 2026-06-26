@@ -159,6 +159,7 @@ export function IncomingOrderOverlay() {
             <span className="incoming-meta-pill">{fulfillmentLabel(display.delivery_type, t)}</span>
             <span className="incoming-meta-pill">{display.customerName ?? t('guest')}</span>
             {display.customerPhone ? <span>{display.customerPhone}</span> : null}
+            {display.customerEmail ? <span>{display.customerEmail}</span> : null}
           </div>
 
           {display.deliveryAddress ? <p className="incoming-address">{display.deliveryAddress}</p> : null}

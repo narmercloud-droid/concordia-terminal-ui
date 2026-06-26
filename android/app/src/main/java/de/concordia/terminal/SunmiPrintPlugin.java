@@ -31,14 +31,22 @@ public class SunmiPrintPlugin extends Plugin {
     private final List<PendingPrint> pendingPrints = new ArrayList<>();
     private final List<PluginCall> pendingAvailability = new ArrayList<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final AtomicBoolean printing = new AtomicBoolean(false);
 
     private static class PendingPrint {
         final PluginCall call;
         final Runnable action;
+        final AtomicBoolean executed = new AtomicBoolean(false);
 
         PendingPrint(PluginCall call, Runnable action) {
             this.call = call;
             this.action = action;
+        }
+
+        void runOnce() {
+            if (executed.compareAndSet(false, true)) {
+                action.run();
+            }
         }
     }
 
@@ -85,7 +93,7 @@ public class SunmiPrintPlugin extends Plugin {
         List<PendingPrint> prints = new ArrayList<>(pendingPrints);
         pendingPrints.clear();
         for (PendingPrint pending : prints) {
-            pending.action.run();
+            pending.runOnce();
         }
     }
 
@@ -131,22 +139,25 @@ public class SunmiPrintPlugin extends Plugin {
             action.run();
             return;
         }
-        pendingPrints.add(new PendingPrint(call, action));
-        waitForPrinter(call, action, 0);
+        PendingPrint pending = new PendingPrint(call, action);
+        pendingPrints.add(pending);
+        waitForPrinter(pending, 0);
     }
 
-    private void waitForPrinter(PluginCall call, Runnable action, int attempt) {
+    private void waitForPrinter(PendingPrint pending, int attempt) {
         if (sunmiPrinterService != null) {
-            pendingPrints.removeIf((p) -> p.call == call);
-            action.run();
+            pendingPrints.remove(pending);
+            pending.runOnce();
             return;
         }
         if (attempt >= 40) {
-            pendingPrints.removeIf((p) -> p.call == call);
-            call.reject("Sunmi printer service not available. Check paper and restart the device.");
+            pendingPrints.remove(pending);
+            if (!pending.call.isReleased()) {
+                pending.call.reject("Sunmi printer service not available. Check paper and restart the device.");
+            }
             return;
         }
-        mainHandler.postDelayed(() -> waitForPrinter(call, action, attempt + 1), 250);
+        mainHandler.postDelayed(() -> waitForPrinter(pending, attempt + 1), 250);
     }
 
     private void executePrintText(PluginCall call, String text) {
@@ -178,6 +189,18 @@ public class SunmiPrintPlugin extends Plugin {
     }
 
     private void executePrintReceipt(PluginCall call, String text, String qrUrl, String footerText) {
+        if (!printing.compareAndSet(false, true)) {
+            call.reject("Print already in progress");
+            return;
+        }
+        try {
+            executePrintReceiptInner(call, text, qrUrl, footerText);
+        } finally {
+            printing.set(false);
+        }
+    }
+
+    private void executePrintReceiptInner(PluginCall call, String text, String qrUrl, String footerText) {
         try {
             sunmiPrinterService.printerInit(null);
             boolean printed = false;

@@ -18,6 +18,17 @@ export interface DevicePrintPlugin {
 const KingtopPrint = registerPlugin<DevicePrintPlugin>('KingtopPrint')
 const ZcsPrint = registerPlugin<DevicePrintPlugin>('ZcsPrint')
 
+let printChain: Promise<unknown> = Promise.resolve()
+
+async function withPrintLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = printChain.then(fn, fn)
+  printChain = run.then(
+    () => undefined,
+    () => undefined,
+  )
+  return run
+}
+
 async function printReceiptOnPlugin(
   plugin: DevicePrintPlugin,
   receipt: OrderReceipt,
@@ -38,7 +49,7 @@ async function printReceiptOnPlugin(
 
 async function trySunmiPrint(
   receipt: OrderReceipt,
-): Promise<{ ok: boolean; error?: string; driver: string; qrPrinted?: boolean } | null> {
+): Promise<{ ok: boolean; error?: string; driver: string; qrPrinted?: boolean; attempted: boolean } | null> {
   try {
     const sunmi = await SunmiPrint.isAvailable()
     if (!sunmi.available) return null
@@ -52,33 +63,32 @@ async function trySunmiPrint(
           error: 'Delivery QR did not print',
           driver: 'sunmi',
           qrPrinted: false,
+          attempted: true,
         }
       }
       if (!printed.ok) {
-        return { ok: false, error: 'Receipt print failed', driver: 'sunmi', qrPrinted: false }
+        return { ok: false, error: 'Receipt print failed', driver: 'sunmi', qrPrinted: false, attempted: true }
       }
-      return { ok: true, driver: 'sunmi', qrPrinted: printed.qrPrinted }
+      return { ok: true, driver: 'sunmi', qrPrinted: printed.qrPrinted, attempted: true }
     }
 
     await SunmiPrint.printText({ text: receipt.text })
-    return { ok: true, driver: 'sunmi', qrPrinted: false }
+    return { ok: true, driver: 'sunmi', qrPrinted: false, attempted: true }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Sunmi print failed'
-    return { ok: false, error: message, driver: 'sunmi' }
+    return { ok: false, error: message, driver: 'sunmi', attempted: true }
   }
 }
 
-export async function printOrderReceipt(
+async function printOrderReceiptInner(
   receipt: OrderReceipt,
 ): Promise<{ ok: boolean; error?: string; driver?: string; qrPrinted?: boolean }> {
   const needsQr = Boolean(receipt.qrUrl?.trim())
 
-  // Sunmi V2/V2S built-in printer — try before network/ZCS/Kingtop paths.
-  const sunmiFirst = await trySunmiPrint(receipt)
-  if (sunmiFirst?.ok) {
-    return sunmiFirst
+  const sunmi = await trySunmiPrint(receipt)
+  if (sunmi?.attempted) {
+    return sunmi
   }
-  let sunmiError = sunmiFirst && !sunmiFirst.ok ? sunmiFirst.error ?? '' : ''
 
   let zcsReason = ''
   try {
@@ -131,17 +141,6 @@ export async function printOrderReceipt(
     console.warn('Kingtop print path failed', err)
   }
 
-  // Sunmi again if the early probe raced service bind (e.g. cold start).
-  if (!sunmiFirst?.ok) {
-    const sunmiRetry = await trySunmiPrint(receipt)
-    if (sunmiRetry?.ok) {
-      return sunmiRetry
-    }
-    if (sunmiRetry && !sunmiRetry.ok) {
-      sunmiError = sunmiRetry.error ?? sunmiError
-    }
-  }
-
   let networkError = ''
   if (!needsQr) {
     const network = await printOnNetworkPrinter(receipt.text)
@@ -152,8 +151,8 @@ export async function printOrderReceipt(
   }
 
   let detail = 'No supported printer found.'
-  if (sunmiError) {
-    detail += ` Sunmi: ${sunmiError}.`
+  if (sunmi?.error) {
+    detail += ` Sunmi: ${sunmi.error}.`
   }
   if (zcsReason) {
     detail += ` ZCS: ${zcsReason}.`
@@ -179,6 +178,12 @@ export async function printOrderReceipt(
   }
 
   return { ok: false, error: detail }
+}
+
+export async function printOrderReceipt(
+  receipt: OrderReceipt,
+): Promise<{ ok: boolean; error?: string; driver?: string; qrPrinted?: boolean }> {
+  return withPrintLock(() => printOrderReceiptInner(receipt))
 }
 
 export async function printOnDevice(text: string): Promise<{ ok: boolean; error?: string; driver?: string }> {

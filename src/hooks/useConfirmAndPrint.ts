@@ -32,22 +32,15 @@ export function useConfirmAndPrint() {
       void stopPendingAlerts()
       try {
         let confirmed = await ordersApi.confirmOrder(orderId, prepMinutes)
+        useOrderStore.getState().upsertOrder(confirmed)
+        const branchName = useTerminalStore.getState().branch_name
+        const receipt = buildOrderReceipt(confirmed, prepMinutes, { branchName })
         const delivery = !String(confirmed.delivery_type ?? '')
           .toLowerCase()
           .match(/pickup|abhol/)
         if (delivery && !resolveCourierUrl(confirmed)) {
-          try {
-            confirmed = await ordersApi.getOrderDetails(orderId)
-          } catch {
-            // use confirm payload as-is
-          }
-        }
-        if (delivery && !resolveCourierUrl(confirmed)) {
           console.warn('Delivery order missing courier URL/token — QR will not print', orderId)
         }
-        useOrderStore.getState().upsertOrder(confirmed)
-        const branchName = useTerminalStore.getState().branch_name
-        const receipt = buildOrderReceipt(confirmed, prepMinutes, { branchName })
         const printResult = await printOrderReceipt(receipt)
         if (!printResult.ok) {
           console.warn('Receipt print failed:', printResult.error)

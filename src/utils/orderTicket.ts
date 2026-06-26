@@ -82,12 +82,28 @@ function displayBranchName(name?: string): string {
 }
 
 function formatCustomerName(name?: string): string {
-  const parts = (name ?? 'Gast').trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return 'Gast'
-  if (parts.length === 1) return parts[0]
-  const initial = parts[0].charAt(0).toUpperCase()
-  const lastName = parts[parts.length - 1]
-  return `${initial}. ${lastName}`
+  const trimmed = (name ?? '').trim()
+  return trimmed || 'Gast'
+}
+
+function formatPhone(phone?: string): string | undefined {
+  const trimmed = (phone ?? '').trim()
+  return trimmed || undefined
+}
+
+function formatEmail(email?: string): string | undefined {
+  const trimmed = (email ?? '').trim()
+  return trimmed || undefined
+}
+
+function formatAddressBlock(address?: string): string[] {
+  if (!address?.trim()) return []
+  const parts = address
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
+  if (parts.length === 0) return []
+  return parts
 }
 
 function isPaid(order: OrderDetails): boolean {
@@ -242,18 +258,36 @@ export function buildOrderReceipt(
   lines.push(`${BOLD}${padLine('Gesamtbetrag', formatAmount(total))}`)
   lines.push(RULE)
   lines.push(paymentStatusLine(order, pickup, paid))
+  lines.push(RULE)
   lines.push(`${BOLD}Kunde: ${formatCustomerName(order.customerName)}`)
 
+  const phone = formatPhone(order.customerPhone)
+  if (phone) {
+    lines.push(`${BOLD}Tel: ${phone}`)
+  }
+
+  const email = formatEmail(order.customerEmail)
+  if (email) {
+    lines.push(`${BOLD}E-Mail: ${email}`)
+  }
+
   if (pickup) {
-    appendOrderNotes(lines, customerNotes)
-  } else if (order.deliveryAddress) {
-    const address = order.deliveryAddress
-      .split(',')
-      .map((p) => p.trim())
-      .filter(Boolean)
-      .join(', ')
-    lines.push(`${BOLD}${address}`)
-    appendOrderNotes(lines, customerNotes)
+    if (customerNotes) {
+      lines.push(`${BOLD}Anmerkungen:`)
+      appendOrderNotes(lines, customerNotes)
+    }
+  } else {
+    const addressParts = formatAddressBlock(order.deliveryAddress)
+    if (addressParts.length) {
+      lines.push(`${BOLD}Adresse:`)
+      for (const part of addressParts) {
+        lines.push(part)
+      }
+    }
+    if (customerNotes) {
+      lines.push(`${BOLD}Anmerkungen:`)
+      appendOrderNotes(lines, customerNotes)
+    }
   }
 
   lines.push(
