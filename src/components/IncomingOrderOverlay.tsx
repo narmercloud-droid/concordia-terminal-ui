@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { useOrderStore } from '../store/orderStore.js'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { ordersApi } from '../api/orders.js'
-import { isPendingOrder } from '../utils/orderCountdown.js'
+import { isPendingOrder, isScheduledOrder } from '../utils/orderCountdown.js'
 import { playUrgentPendingTone, startPendingAlertLoop, stopPendingAlerts } from '../utils/notificationSound.js'
-import { formatCurrency } from '../utils/format.js'
+import { formatCurrency, formatDateTime } from '../utils/format.js'
 import { useI18n } from '../i18n/index.js'
 import {
   defaultPrepMinutes,
@@ -157,6 +157,11 @@ export function IncomingOrderOverlay() {
 
           <div className="incoming-meta">
             <span className="incoming-meta-pill">{fulfillmentLabel(display.delivery_type, t)}</span>
+            {isScheduledOrder(display) ? (
+              <span className="incoming-meta-pill incoming-meta-pill--scheduled">
+                {t('scheduledOrder')} · {formatDateTime(display.scheduledFor!)}
+              </span>
+            ) : null}
             <span className="incoming-meta-pill">{display.customerName ?? t('guest')}</span>
             {display.customerPhone ? <span>{display.customerPhone}</span> : null}
             {display.customerEmail ? <span>{display.customerEmail}</span> : null}
@@ -180,29 +185,38 @@ export function IncomingOrderOverlay() {
           <p className="incoming-total">{formatCurrency(display.total)}</p>
 
           <section className="incoming-prep">
-            <h3>{t('prepTime')}</h3>
-            <div className="prep-presets">
-              {prepPresets.map((mins) => (
-                <button
-                  key={mins}
-                  type="button"
-                  className={`prep-chip ${prepMinutes === mins ? 'active' : ''}`}
-                  onClick={() => setPrepMinutes(mins)}
+            {isScheduledOrder(display) ? (
+              <>
+                <h3>{t('scheduledOrder')}</h3>
+                <p className="incoming-scheduled-hint">{t('scheduledOrderHint')}</p>
+              </>
+            ) : (
+              <>
+                <h3>{t('prepTime')}</h3>
+                <div className="prep-presets">
+                  {prepPresets.map((mins) => (
+                    <button
+                      key={mins}
+                      type="button"
+                      className={`prep-chip ${prepMinutes === mins ? 'active' : ''}`}
+                      onClick={() => setPrepMinutes(mins)}
+                      disabled={busy}
+                    >
+                      {mins} {t('minutes')}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="number"
+                  min={5}
+                  max={180}
+                  value={prepMinutes}
                   disabled={busy}
-                >
-                  {mins} {t('minutes')}
-                </button>
-              ))}
-            </div>
-            <input
-              type="number"
-              min={5}
-              max={180}
-              value={prepMinutes}
-              disabled={busy}
-              onChange={(e) => setPrepMinutes(Number(e.target.value))}
-              aria-label={t('prepTime')}
-            />
+                  onChange={(e) => setPrepMinutes(Number(e.target.value))}
+                  aria-label={t('prepTime')}
+                />
+              </>
+            )}
           </section>
 
           {loadError ? <p className="incoming-error">{loadError}</p> : null}

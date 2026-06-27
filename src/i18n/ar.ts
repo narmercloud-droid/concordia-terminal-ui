@@ -29,6 +29,8 @@ export const ar: Record<TranslationKey, string> = {
   delivery: 'توصيل',
   pickup: 'استلام',
   scheduled: 'مجدول',
+  scheduledOrder: 'طلب مجدول',
+  scheduledOrderHint: 'العد التنازلي حتى وقت الاستلام أو التوصيل المجدول — وليس وقت التحضير الافتراضي.',
   payment: 'الدفع',
   address: 'العنوان',
   note: 'ملاحظة',

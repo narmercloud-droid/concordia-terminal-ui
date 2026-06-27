@@ -64,6 +64,11 @@ function isPickup(type?: string): boolean {
   return t.includes('pickup') || t.includes('abhol')
 }
 
+function isScheduledOrder(order: OrderDetails): boolean {
+  if (!order.scheduledFor) return false
+  return !Number.isNaN(new Date(order.scheduledFor).getTime())
+}
+
 function formatAmount(value: number): string {
   return `${value.toFixed(2)} €`
 }
@@ -215,24 +220,32 @@ export function buildOrderReceipt(
   const discount = order.discount ?? 0
   const total = order.total > 0 ? order.total : Math.max(0, subtotal - discount) + deliveryFee
 
-  const dueIso =
-    order.scheduledFor ??
-    order.etaReadyAt ??
-    (prepMinutes != null
-      ? new Date(Date.now() + prepMinutes * 60_000).toISOString()
-      : order.confirmedAt ?? order.createdAt)
+  const dueIso = isScheduledOrder(order)
+    ? order.scheduledFor!
+    : order.scheduledFor ??
+      order.etaReadyAt ??
+      (prepMinutes != null
+        ? new Date(Date.now() + prepMinutes * 60_000).toISOString()
+        : order.confirmedAt ?? order.createdAt)
 
   const due = berlinParts(dueIso)
   const placed = berlinParts(order.createdAt)
   const accepted = berlinParts(order.confirmedAt ?? new Date().toISOString())
+  const scheduled = isScheduledOrder(order)
 
   const lines: string[] = [
     centerLarge(branch),
     centerLarge(pickup ? 'ABHOLUNG' : 'LIEFERUNG'),
-    boldCenter(`Fällig: ${due.dueDate}, ${due.time}`),
-    center(formatReceiptOrderId(order.order_id)),
-    RULE,
   ]
+
+  if (scheduled) {
+    lines.push(boldCenter('GEPLANTE BESTELLUNG'))
+    lines.push(boldCenter(`Geplant für: ${due.dueDate}, ${due.time}`))
+  } else {
+    lines.push(boldCenter(`Fällig: ${due.dueDate}, ${due.time}`))
+  }
+
+  lines.push(center(formatReceiptOrderId(order.order_id)), RULE)
 
   for (const item of order.items) {
     lines.push(...formatItemBlock(item))

@@ -5,11 +5,14 @@ import { useTerminalStore } from '../store/terminalStore.js'
 import { buildOrderReceipt, resolveCourierUrl } from '../utils/orderTicket.js'
 import { printOrderReceipt } from '../native/devicePrint.js'
 import { stopPendingAlerts } from '../utils/notificationSound.js'
-import { isPickup } from '../utils/orderCountdown.js'
+import { isPickup, minutesUntilScheduled } from '../utils/orderCountdown.js'
 import type { Order } from '../types/order.js'
 import { useI18n } from '../i18n/index.js'
 
-export function defaultPrepMinutes(order: Pick<Order, 'delivery_type'>) {
+export function defaultPrepMinutes(order: Pick<Order, 'delivery_type' | 'scheduledFor'>) {
+  const scheduledMins = minutesUntilScheduled(order as Order)
+  if (scheduledMins != null) return Math.min(180, scheduledMins)
+
   const type = String(order.delivery_type ?? '').toLowerCase()
   if (type.includes('pickup') || type.includes('abhol')) return 15
   return 45

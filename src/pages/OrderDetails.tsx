@@ -12,22 +12,16 @@ import { printOrderReceipt } from '../native/devicePrint.js'
 import { getStageActions } from '../utils/orderStages.js'
 import type { StageAction } from '../utils/orderStages.js'
 import { getApiErrorMessage } from '../lib/apiErrors.js'
-import { isPickup } from '../utils/orderCountdown.js'
+import { isScheduledOrder } from '../utils/orderCountdown.js'
 import { useI18n } from '../i18n/index.js'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { useOrderStatusUpdate } from '../hooks/useOrderStatusUpdate.js'
+import { defaultPrepMinutes, prepPresetsFor } from '../hooks/useConfirmAndPrint.js'
 import { getStatusLabelKey, orderShortId } from '../utils/orderDisplay.js'
 import { RejectOrderDialog } from '../components/RejectOrderDialog.js'
 import '../App.css'
 
 const PREP_PRESETS_DELIVERY = [30, 45, 60, 75]
-const PREP_PRESETS_PICKUP = [10, 15, 20, 30]
-
-function defaultPrepMinutes(fulfillment?: string) {
-  const type = (fulfillment ?? '').toLowerCase()
-  if (type.includes('pickup') || type.includes('abhol')) return 15
-  return 45
-}
 
 const OrderDetails = () => {
   const { order_id } = useParams<{ order_id: string }>()
@@ -72,7 +66,7 @@ const OrderDetails = () => {
       try {
         const response = await ordersApi.getOrderDetails(order_id)
         setOrder(response)
-        setPrepMinutes(defaultPrepMinutes(response.delivery_type))
+        setPrepMinutes(defaultPrepMinutes(response))
       } catch (err) {
         setError(t('detailError'))
         console.error(err)
@@ -87,7 +81,7 @@ const OrderDetails = () => {
   const isPending = order?.status === 'pending' || order?.status === 'new'
   const prepPresets = useMemo(() => {
     if (!order) return PREP_PRESETS_DELIVERY
-    return isPickup(order) ? PREP_PRESETS_PICKUP : PREP_PRESETS_DELIVERY
+    return prepPresetsFor(order)
   }, [order])
 
   const stageActions = order ? getStageActions(order) : []
@@ -229,7 +223,7 @@ const OrderDetails = () => {
               </div>
               {order.scheduledFor ? (
                 <div className="detail-row">
-                  <span>{t('scheduled')}</span>
+                  <span>{t('scheduledOrder')}</span>
                   <strong>{formatDateTime(order.scheduledFor)}</strong>
                 </div>
               ) : null}
@@ -261,27 +255,36 @@ const OrderDetails = () => {
 
             {isPending ? (
               <section className="detail-section">
-                <h2>{t('prepTime')}</h2>
-                <div className="prep-presets">
-                  {prepPresets.map((mins) => (
-                    <button
-                      key={mins}
-                      type="button"
-                      className={`prep-chip ${prepMinutes === mins ? 'active' : ''}`}
-                      onClick={() => setPrepMinutes(mins)}
-                    >
-                      {mins} {t('minutes')}
-                    </button>
-                  ))}
-                </div>
-                <input
-                  id="prep_minutes"
-                  type="number"
-                  min={5}
-                  max={180}
-                  value={prepMinutes}
-                  onChange={(e) => setPrepMinutes(Number(e.target.value))}
-                />
+                {isScheduledOrder(order) ? (
+                  <>
+                    <h2>{t('scheduledOrder')}</h2>
+                    <p className="incoming-scheduled-hint">{t('scheduledOrderHint')}</p>
+                  </>
+                ) : (
+                  <>
+                    <h2>{t('prepTime')}</h2>
+                    <div className="prep-presets">
+                      {prepPresets.map((mins) => (
+                        <button
+                          key={mins}
+                          type="button"
+                          className={`prep-chip ${prepMinutes === mins ? 'active' : ''}`}
+                          onClick={() => setPrepMinutes(mins)}
+                        >
+                          {mins} {t('minutes')}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      id="prep_minutes"
+                      type="number"
+                      min={5}
+                      max={180}
+                      value={prepMinutes}
+                      onChange={(e) => setPrepMinutes(Number(e.target.value))}
+                    />
+                  </>
+                )}
               </section>
             ) : null}
 

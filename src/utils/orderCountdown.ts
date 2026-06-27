@@ -42,46 +42,46 @@ export function shouldShowCountdown(order: Order): boolean {
 
 
 
-export function getOrderDeadlineMs(order: Order, now = Date.now()): number {
+export function isScheduledOrder(order: Order): boolean {
+  if (!order.scheduledFor) return false
+  const t = new Date(order.scheduledFor).getTime()
+  return !Number.isNaN(t)
+}
+
+export function getScheduledDeadlineMs(order: Order): number | null {
+  if (!isScheduledOrder(order)) return null
+  return new Date(order.scheduledFor!).getTime()
+}
+
+export function minutesUntilScheduled(order: Order, now = Date.now()): number | null {
+  const deadline = getScheduledDeadlineMs(order)
+  if (deadline == null) return null
+  return Math.max(5, Math.ceil((deadline - now) / 60_000))
+}
+
+export function getOrderDeadlineMs(order: Order, _now = Date.now()): number {
+  const scheduledDeadline = getScheduledDeadlineMs(order)
+  if (scheduledDeadline != null) return scheduledDeadline
 
   if (order.etaDeliveredAt) {
-
     const t = new Date(order.etaDeliveredAt).getTime()
-
     if (!Number.isNaN(t)) return t
-
   }
 
   if (order.etaReadyAt) {
-
     const t = new Date(order.etaReadyAt).getTime()
-
     if (!Number.isNaN(t)) return t
-
-  }
-
-  if (order.scheduledFor) {
-
-    const t = new Date(order.scheduledFor).getTime()
-
-    if (!Number.isNaN(t) && t > now) return t
-
   }
 
   if (order.confirmedAt && order.estimatedPrepMinutes) {
-
     return new Date(order.confirmedAt).getTime() + order.estimatedPrepMinutes * 60_000
-
   }
 
   if (order.createdAt && order.estimatedPrepMinutes) {
-
     return new Date(order.createdAt).getTime() + order.estimatedPrepMinutes * 60_000
-
   }
 
   return Number.MAX_SAFE_INTEGER
-
 }
 
 
@@ -210,7 +210,7 @@ export function getCountdownMinutesDisplay(
 
   now = Date.now(),
 
-): { minutes: number; overdue: boolean } | null {
+): { minutes: number; overdue: boolean; useClockFormat?: boolean } | null {
 
   if (isPendingOrder(order) || isFinishedOrder(order)) return null
 
@@ -220,19 +220,25 @@ export function getCountdownMinutesDisplay(
 
   if (remainingSec === -1) return null
 
+  const useClockFormat = isScheduledOrder(order) || remainingSec >= 3600
+
 
 
   if (remainingSec >= 0) {
 
     const minutes = Math.max(0, Math.ceil(remainingSec / 60))
 
-    return { minutes, overdue: false }
+    return { minutes, overdue: false, useClockFormat }
 
   }
 
 
 
-  return { minutes: Math.ceil(Math.abs(remainingSec) / 60), overdue: true }
+  return {
+    minutes: Math.ceil(Math.abs(remainingSec) / 60),
+    overdue: true,
+    useClockFormat,
+  }
 
 }
 

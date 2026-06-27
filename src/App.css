@@ -377,6 +377,26 @@
   color: #ff8000;
 }
 
+.circular-timer__clock {
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #111827;
+}
+
+.incoming-meta-pill--scheduled {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+
+.incoming-scheduled-hint {
+  margin: 0;
+  color: #6b7280;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
 .circular-timer--pending svg circle:last-child {
   animation: pulse-ring 1.2s ease-in-out infinite;
 }

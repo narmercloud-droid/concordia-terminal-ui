@@ -53,19 +53,12 @@ export function CountdownBadge({ order }: CountdownBadgeProps) {
 
 
   const overdue = seconds <= 0
-
   const label = overdue ? t('overdue') : t('timeLeft')
 
-
-
   return (
-
     <span className={`countdown-badge ${overdue ? 'countdown-overdue' : 'countdown-ok'}`}>
-
       {label} {formatCountdown(seconds)}
-
     </span>
-
   )
 
 }

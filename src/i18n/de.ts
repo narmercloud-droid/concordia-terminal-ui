@@ -27,6 +27,8 @@ export const de = {
   delivery: 'Lieferung',
   pickup: 'Abholung',
   scheduled: 'Geplant',
+  scheduledOrder: 'Geplante Bestellung',
+  scheduledOrderHint: 'Countdown bis zur geplanten Abhol- bzw. Lieferzeit — nicht die Standard-Zubereitungszeit.',
   payment: 'Zahlung',
   address: 'Adresse',
   note: 'Hinweis',
