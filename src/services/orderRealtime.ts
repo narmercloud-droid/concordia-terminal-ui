@@ -5,6 +5,7 @@ import { useTerminalStore } from '../store/terminalStore.js'
 import { mapApiOrder } from '../utils/orderMap.js'
 import { isBerlinToday } from '../utils/berlinToday.js'
 import { bringAppToFront, startKeepAlive, stopKeepAlive } from '../native/terminalKeepAlive.js'
+import { warmPrinter } from '../native/printerWarmup.js'
 import { startBackendWarmup, stopBackendWarmup } from '../api/warmup.js'
 
 const API_URL =
@@ -51,6 +52,7 @@ export function startOrderRealtime() {
   if (startedForBranch === branch_id && socket?.connected) {
     void startKeepAlive(branch_id, branch_name || 'Concordia Terminal')
     startBackendWarmup()
+    void warmPrinter()
     return
   }
 
@@ -63,6 +65,7 @@ export function startOrderRealtime() {
 
   void startKeepAlive(branch_id, branch_name || 'Concordia Terminal')
   startBackendWarmup()
+  void warmPrinter()
 
   try {
     socket = createSocket(API_URL, branch_id)

@@ -128,8 +128,8 @@ public class KingtopPrintPlugin extends Plugin {
             // optional on some firmware builds
         }
 
-        // Z90/Z91 SDK notes: wait before serial connect
-        Thread.sleep(1000);
+        // Z90/Z91 SDK notes: brief wait before serial connect
+        Thread.sleep(500);
 
         Method isConnected = handlerClass.getMethod("isConnected");
         boolean connected = Boolean.TRUE.equals(isConnected.invoke(handler));
@@ -137,7 +137,7 @@ public class KingtopPrintPlugin extends Plugin {
             Method connect = handlerClass.getMethod("connect");
             Object connectResult = connect.invoke(handler);
             Log.i(TAG, "connect() => " + String.valueOf(connectResult));
-            Thread.sleep(300);
+            Thread.sleep(150);
         }
     }
 

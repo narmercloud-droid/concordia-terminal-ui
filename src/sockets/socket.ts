@@ -14,7 +14,8 @@ export const createSocket = (apiUrl: string, branchId: string): Socket => {
 
   joinedBranchId = branchId
   socket = io(apiUrl, {
-    transports: ['polling', 'websocket'],
+    transports: ['websocket', 'polling'],
+    upgrade: true,
     autoConnect: true,
     reconnection: true,
     reconnectionAttempts: Infinity,

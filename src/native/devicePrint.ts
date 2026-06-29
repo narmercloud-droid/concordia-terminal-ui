@@ -80,13 +80,46 @@ async function trySunmiPrint(
   }
 }
 
+async function tryKingtopPrint(
+  receipt: OrderReceipt,
+): Promise<{ ok: boolean; error?: string; driver: string; qrPrinted?: boolean; attempted: boolean } | null> {
+  try {
+    const kingtop = await KingtopPrint.isAvailable()
+    if (!kingtop.available) return null
+
+    const needsQr = Boolean(receipt.qrUrl?.trim())
+    const printed = await printReceiptOnPlugin(KingtopPrint, receipt)
+    if (needsQr && !printed.qrPrinted) {
+      return {
+        ok: false,
+        error: 'Delivery QR did not print',
+        driver: 'kingtop',
+        qrPrinted: false,
+        attempted: true,
+      }
+    }
+    if (!printed.ok) {
+      return { ok: false, error: 'Receipt print failed', driver: 'kingtop', qrPrinted: false, attempted: true }
+    }
+    return { ok: true, driver: 'kingtop', qrPrinted: printed.qrPrinted, attempted: true }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Kingtop print failed'
+    return { ok: false, error: message, driver: 'kingtop', attempted: true }
+  }
+}
+
 async function printOrderReceiptInner(
   receipt: OrderReceipt,
 ): Promise<{ ok: boolean; error?: string; driver?: string; qrPrinted?: boolean }> {
   const needsQr = Boolean(receipt.qrUrl?.trim())
 
+  const kingtop = await tryKingtopPrint(receipt)
+  if (kingtop?.attempted && kingtop.ok) {
+    return kingtop
+  }
+
   const sunmi = await trySunmiPrint(receipt)
-  if (sunmi?.attempted) {
+  if (sunmi?.attempted && sunmi.ok) {
     return sunmi
   }
 
@@ -115,31 +148,14 @@ async function printOrderReceiptInner(
     console.warn('ZCS print path failed', err)
   }
 
-  let kingtopReason = ''
-  try {
-    const kingtop = await KingtopPrint.isAvailable()
-    if (!kingtop.available && kingtop.reason) {
-      kingtopReason = kingtop.reason
-    }
-    if (kingtop.available) {
-      const printed = await printReceiptOnPlugin(KingtopPrint, receipt)
-      if (needsQr && !printed.qrPrinted) {
-        return {
-          ok: false,
-          error: 'Delivery QR did not print',
-          driver: 'kingtop',
-          qrPrinted: false,
-        }
-      }
-      if (!printed.ok) {
-        return { ok: false, error: 'Receipt print failed', driver: 'kingtop', qrPrinted: false }
-      }
-      return { ok: true, driver: 'kingtop', qrPrinted: printed.qrPrinted }
-    }
-  } catch (err) {
-    kingtopReason = err instanceof Error ? err.message : 'Kingtop print failed'
-    console.warn('Kingtop print path failed', err)
+  if (kingtop?.attempted && !kingtop.ok) {
+    return kingtop
   }
+  if (sunmi?.attempted && !sunmi.ok) {
+    return sunmi
+  }
+
+  let kingtopReason = kingtop?.error ?? ''
 
   let networkError = ''
   if (!needsQr) {
@@ -151,14 +167,11 @@ async function printOrderReceiptInner(
   }
 
   let detail = 'No supported printer found.'
-  if (sunmi?.error) {
-    detail += ` Sunmi: ${sunmi.error}.`
+  if (kingtopReason) {
+    detail += ` Kingtop: ${kingtopReason}.`
   }
   if (zcsReason) {
     detail += ` ZCS: ${zcsReason}.`
-  }
-  if (kingtopReason) {
-    detail += ` Kingtop: ${kingtopReason}.`
   }
   if (networkError) {
     detail += ` Network: ${networkError}.`

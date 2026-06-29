@@ -6,7 +6,7 @@ import { buildOrderReceipt, resolveCourierUrl } from '../utils/orderTicket.js'
 import { printOrderReceipt } from '../native/devicePrint.js'
 import { stopPendingAlerts } from '../utils/notificationSound.js'
 import { isPickup, minutesUntilScheduled } from '../utils/orderCountdown.js'
-import type { Order } from '../types/order.js'
+import type { Order, OrderDetails } from '../types/order.js'
 import { useI18n } from '../i18n/index.js'
 
 export function defaultPrepMinutes(order: Pick<Order, 'delivery_type' | 'scheduledFor'>) {
@@ -34,17 +34,32 @@ export function useConfirmAndPrint() {
       setBusy(true)
       void stopPendingAlerts()
       try {
-        let confirmed = await ordersApi.confirmOrder(orderId, prepMinutes)
-        useOrderStore.getState().upsertOrder(confirmed)
         const branchName = useTerminalStore.getState().branch_name
-        const receipt = buildOrderReceipt(confirmed, prepMinutes, { branchName })
+        const existing = useOrderStore
+          .getState()
+          .orders.find((o) => o.order_id === orderId) as OrderDetails | undefined
+
+        let printPromise: ReturnType<typeof printOrderReceipt> | null = null
+        if (existing && (existing.items?.length ?? 0) > 0) {
+          const earlyReceipt = buildOrderReceipt(existing, prepMinutes, { branchName })
+          printPromise = printOrderReceipt(earlyReceipt)
+        }
+
+        const confirmed = await ordersApi.confirmOrder(orderId, prepMinutes)
+        useOrderStore.getState().upsertOrder(confirmed)
+
+        if (!printPromise) {
+          const receipt = buildOrderReceipt(confirmed, prepMinutes, { branchName })
+          printPromise = printOrderReceipt(receipt)
+        }
+
+        const printResult = await printPromise
         const delivery = !String(confirmed.delivery_type ?? '')
           .toLowerCase()
           .match(/pickup|abhol/)
         if (delivery && !resolveCourierUrl(confirmed)) {
           console.warn('Delivery order missing courier URL/token — QR will not print', orderId)
         }
-        const printResult = await printOrderReceipt(receipt)
         if (!printResult.ok) {
           console.warn('Receipt print failed:', printResult.error)
         }
