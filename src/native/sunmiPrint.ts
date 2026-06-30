@@ -6,6 +6,10 @@ export interface SunmiPrintPlugin {
 
   isAvailable(): Promise<{ available: boolean }>
 
+  getDeviceKind?(): Promise<{ kind: 'sunmi' | 'other' }>
+
+  warmUp?(): Promise<{ available: boolean }>
+
   printText(options: { text: string }): Promise<{ ok: boolean }>
 
   printReceipt?(options: {

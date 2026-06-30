@@ -1,6 +1,7 @@
 import { registerPlugin } from '@capacitor/core'
 
 import { SunmiPrint } from './sunmiPrint.js'
+import { isSunmiPrinterDevice } from './printerPlatform.js'
 import { printOnNetworkPrinter } from './networkPrint.js'
 import type { OrderReceipt } from '../utils/orderTicket.js'
 
@@ -19,6 +20,13 @@ const KingtopPrint = registerPlugin<DevicePrintPlugin>('KingtopPrint')
 const ZcsPrint = registerPlugin<DevicePrintPlugin>('ZcsPrint')
 
 let printChain: Promise<unknown> = Promise.resolve()
+let sunmiDevice: boolean | null = null
+
+async function useSunmiDevice(): Promise<boolean> {
+  if (sunmiDevice != null) return sunmiDevice
+  sunmiDevice = await isSunmiPrinterDevice()
+  return sunmiDevice
+}
 
 async function withPrintLock<T>(fn: () => Promise<T>): Promise<T> {
   const run = printChain.then(fn, fn)
@@ -49,31 +57,23 @@ async function printReceiptOnPlugin(
 
 async function trySunmiPrint(
   receipt: OrderReceipt,
-): Promise<{ ok: boolean; error?: string; driver: string; qrPrinted?: boolean; attempted: boolean } | null> {
+): Promise<{ ok: boolean; error?: string; driver: string; qrPrinted?: boolean; attempted: boolean }> {
   try {
-    const sunmi = await SunmiPrint.isAvailable()
-    if (!sunmi.available) return null
-
     const needsQr = Boolean(receipt.qrUrl?.trim())
-    if (SunmiPrint.printReceipt) {
-      const printed = await printReceiptOnPlugin(SunmiPrint, receipt)
-      if (needsQr && !printed.qrPrinted) {
-        return {
-          ok: false,
-          error: 'Delivery QR did not print',
-          driver: 'sunmi',
-          qrPrinted: false,
-          attempted: true,
-        }
+    const printed = await printReceiptOnPlugin(SunmiPrint, receipt)
+    if (needsQr && !printed.qrPrinted) {
+      return {
+        ok: false,
+        error: 'Delivery QR did not print',
+        driver: 'sunmi',
+        qrPrinted: false,
+        attempted: true,
       }
-      if (!printed.ok) {
-        return { ok: false, error: 'Receipt print failed', driver: 'sunmi', qrPrinted: false, attempted: true }
-      }
-      return { ok: true, driver: 'sunmi', qrPrinted: printed.qrPrinted, attempted: true }
     }
-
-    await SunmiPrint.printText({ text: receipt.text })
-    return { ok: true, driver: 'sunmi', qrPrinted: false, attempted: true }
+    if (!printed.ok) {
+      return { ok: false, error: 'Receipt print failed', driver: 'sunmi', qrPrinted: false, attempted: true }
+    }
+    return { ok: true, driver: 'sunmi', qrPrinted: printed.qrPrinted, attempted: true }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Sunmi print failed'
     return { ok: false, error: message, driver: 'sunmi', attempted: true }
@@ -84,6 +84,9 @@ async function tryKingtopPrint(
   receipt: OrderReceipt,
 ): Promise<{ ok: boolean; error?: string; driver: string; qrPrinted?: boolean; attempted: boolean } | null> {
   try {
+    const kingtop = await KingtopPrint.isAvailable()
+    if (!kingtop.available) return null
+
     const needsQr = Boolean(receipt.qrUrl?.trim())
     const printed = await printReceiptOnPlugin(KingtopPrint, receipt)
     if (needsQr && !printed.qrPrinted) {
@@ -109,15 +112,28 @@ async function printOrderReceiptInner(
   receipt: OrderReceipt,
 ): Promise<{ ok: boolean; error?: string; driver?: string; qrPrinted?: boolean }> {
   const needsQr = Boolean(receipt.qrUrl?.trim())
+  const sunmiFirst = await useSunmiDevice()
+
+  if (sunmiFirst) {
+    const sunmi = await trySunmiPrint(receipt)
+    if (sunmi.attempted) {
+      return sunmi
+    }
+  }
 
   const kingtop = await tryKingtopPrint(receipt)
   if (kingtop?.attempted && kingtop.ok) {
     return kingtop
   }
 
-  const sunmi = await trySunmiPrint(receipt)
-  if (sunmi?.attempted && sunmi.ok) {
-    return sunmi
+  if (!sunmiFirst) {
+    const sunmi = await trySunmiPrint(receipt)
+    if (sunmi.attempted && sunmi.ok) {
+      return sunmi
+    }
+    if (sunmi.attempted && !sunmi.ok) {
+      return sunmi
+    }
   }
 
   let zcsReason = ''
@@ -126,9 +142,7 @@ async function printOrderReceiptInner(
     if (!zcs.available && zcs.reason) zcsReason = zcs.reason
     if (zcs.available) {
       const printed = await printReceiptOnPlugin(ZcsPrint, receipt)
-      if (!printed.ok) {
-        console.warn('ZCS receipt body failed, trying Kingtop driver')
-      } else {
+      if (printed.ok) {
         if (needsQr && !printed.qrPrinted) {
           return {
             ok: false,
@@ -148,11 +162,6 @@ async function printOrderReceiptInner(
   if (kingtop?.attempted && !kingtop.ok) {
     return kingtop
   }
-  if (sunmi?.attempted && !sunmi.ok) {
-    return sunmi
-  }
-
-  let kingtopReason = kingtop?.error ?? ''
 
   let networkError = ''
   if (!needsQr) {
@@ -163,28 +172,17 @@ async function printOrderReceiptInner(
     networkError = network.error ?? ''
   }
 
-  let detail = 'No supported printer found.'
-  if (kingtopReason) {
-    detail += ` Kingtop: ${kingtopReason}.`
+  let detail = sunmiFirst
+    ? 'Sunmi printer failed.'
+    : 'No supported printer found.'
+  if (kingtop?.error) {
+    detail += ` Kingtop: ${kingtop.error}.`
   }
   if (zcsReason) {
     detail += ` ZCS: ${zcsReason}.`
   }
   if (networkError) {
     detail += ` Network: ${networkError}.`
-  }
-  try {
-    if (KingtopPrint.getDiagnostics) {
-      const diag = await KingtopPrint.getDiagnostics()
-      const found = String(diag.handlerClassesFound ?? '')
-      if (found === 'none') {
-        detail += ' Imagpay SDK not detected on device.'
-      } else if (diag.lastError) {
-        detail += ` ${diag.lastError}`
-      }
-    }
-  } catch {
-    // ignore diagnostics failures
   }
 
   return { ok: false, error: detail }
@@ -204,9 +202,12 @@ export type PrinterDiagnostics = {
   sunmi: { available: boolean }
   zcs: { driverManagerFound: boolean; available: boolean; lastError: string }
   kingtop: { handlerClassesFound: string; available: boolean; lastError: string; initPath: string }
+  deviceKind: 'sunmi' | 'other'
 }
 
 export async function getPrinterDiagnostics(): Promise<PrinterDiagnostics> {
+  const deviceKind = (await isSunmiPrinterDevice()) ? 'sunmi' : 'other'
+
   let sunmiAvailable = false
   try {
     const sunmi = await SunmiPrint.isAvailable()
@@ -218,33 +219,35 @@ export async function getPrinterDiagnostics(): Promise<PrinterDiagnostics> {
   const zcs = { driverManagerFound: false, available: false, lastError: '' }
   const kingtop = { handlerClassesFound: 'unknown', available: false, lastError: '', initPath: '' }
 
-  try {
-    if (ZcsPrint.getDiagnostics) {
-      const diag = await ZcsPrint.getDiagnostics()
-      zcs.driverManagerFound = Boolean(diag.driverManagerFound)
-      zcs.available = Boolean(diag.available)
-      zcs.lastError = String(diag.lastError ?? '')
-    } else {
-      const check = await ZcsPrint.isAvailable()
-      zcs.available = check.available
-      zcs.lastError = check.reason ?? ''
-      zcs.driverManagerFound = check.available
+  if (deviceKind !== 'sunmi') {
+    try {
+      if (ZcsPrint.getDiagnostics) {
+        const diag = await ZcsPrint.getDiagnostics()
+        zcs.driverManagerFound = Boolean(diag.driverManagerFound)
+        zcs.available = Boolean(diag.available)
+        zcs.lastError = String(diag.lastError ?? '')
+      } else {
+        const check = await ZcsPrint.isAvailable()
+        zcs.available = check.available
+        zcs.lastError = check.reason ?? ''
+        zcs.driverManagerFound = check.available
+      }
+    } catch (err) {
+      zcs.lastError = err instanceof Error ? err.message : 'ZCS diagnostics failed'
     }
-  } catch (err) {
-    zcs.lastError = err instanceof Error ? err.message : 'ZCS diagnostics failed'
+
+    try {
+      if (KingtopPrint.getDiagnostics) {
+        const diag = await KingtopPrint.getDiagnostics()
+        kingtop.handlerClassesFound = String(diag.handlerClassesFound ?? 'unknown')
+        kingtop.available = Boolean(diag.available)
+        kingtop.lastError = String(diag.lastError ?? '')
+        kingtop.initPath = String(diag.initPath ?? '')
+      }
+    } catch (err) {
+      kingtop.lastError = err instanceof Error ? err.message : 'Kingtop diagnostics failed'
+    }
   }
 
-  try {
-    if (KingtopPrint.getDiagnostics) {
-      const diag = await KingtopPrint.getDiagnostics()
-      kingtop.handlerClassesFound = String(diag.handlerClassesFound ?? 'unknown')
-      kingtop.available = Boolean(diag.available)
-      kingtop.lastError = String(diag.lastError ?? '')
-      kingtop.initPath = String(diag.initPath ?? '')
-    }
-  } catch (err) {
-    kingtop.lastError = err instanceof Error ? err.message : 'Kingtop diagnostics failed'
-  }
-
-  return { sunmi: { available: sunmiAvailable }, zcs, kingtop }
+  return { sunmi: { available: sunmiAvailable }, zcs, kingtop, deviceKind }
 }

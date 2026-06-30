@@ -1,6 +1,7 @@
 package de.concordia.terminal;
 
 import android.content.Context;
+import android.os.Build;
 import android.util.Log;
 
 import com.getcapacitor.JSObject;
@@ -288,6 +289,9 @@ public class KingtopPrintPlugin extends Plugin {
     @Override
     public void load() {
         super.load();
+        if (isSunmiDevice()) {
+            return;
+        }
         new Thread(() -> {
             try {
                 if (ensureReady()) {
@@ -405,5 +409,10 @@ public class KingtopPrintPlugin extends Plugin {
         getActivity().runOnUiThread(() -> {
             if (!call.isReleased()) call.reject(message);
         });
+    }
+
+    private static boolean isSunmiDevice() {
+        String manufacturer = Build.MANUFACTURER != null ? Build.MANUFACTURER.toLowerCase() : "";
+        return manufacturer.contains("sunmi");
     }
 }

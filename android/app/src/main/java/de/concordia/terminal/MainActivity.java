@@ -37,6 +37,10 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void warmUpVendorPrintStack() {
+        String manufacturer = Build.MANUFACTURER != null ? Build.MANUFACTURER.toLowerCase() : "";
+        if (manufacturer.contains("sunmi")) {
+            return;
+        }
         new Thread(() -> {
             try {
                 startService(new Intent().setComponent(

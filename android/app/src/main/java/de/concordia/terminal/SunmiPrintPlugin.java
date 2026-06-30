@@ -1,6 +1,7 @@
 package de.concordia.terminal;
 
 import android.graphics.Bitmap;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.RemoteException;
@@ -19,6 +20,7 @@ import com.sunmi.peripheral.printer.SunmiPrinterService;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -104,6 +106,22 @@ public class SunmiPrintPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void getDeviceKind(PluginCall call) {
+        String manufacturer = Build.MANUFACTURER != null ? Build.MANUFACTURER.toLowerCase(Locale.US) : "";
+        JSObject result = new JSObject();
+        result.put("kind", manufacturer.contains("sunmi") ? "sunmi" : "other");
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void warmUp(PluginCall call) {
+        bindPrinterService();
+        JSObject result = new JSObject();
+        result.put("available", sunmiPrinterService != null);
+        call.resolve(result);
+    }
+
+    @PluginMethod
     public void isAvailable(PluginCall call) {
         bindPrinterService();
         if (sunmiPrinterService != null) {
@@ -116,7 +134,7 @@ public class SunmiPrintPlugin extends Plugin {
                 pendingAvailability.remove(call);
                 resolveAvailable(call);
             }
-        }, 5000);
+        }, 1500);
     }
 
     @PluginMethod
@@ -150,7 +168,7 @@ public class SunmiPrintPlugin extends Plugin {
             pending.runOnce();
             return;
         }
-        if (attempt >= 40) {
+        if (attempt >= 24) {
             pendingPrints.remove(pending);
             if (!pending.call.isReleased()) {
                 pending.call.reject("Sunmi printer service not available. Check paper and restart the device.");
