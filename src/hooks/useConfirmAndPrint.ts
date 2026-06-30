@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useCallback } from 'react'
 import { ordersApi } from '../api/orders.js'
 import { useOrderStore } from '../store/orderStore.js'
 import { useTerminalStore } from '../store/terminalStore.js'
@@ -27,58 +27,66 @@ export function prepPresetsFor(order: Pick<Order, 'delivery_type'>) {
 
 export function useConfirmAndPrint() {
   const t = useI18n((s) => s.t)
-  const [busy, setBusy] = useState(false)
 
   const confirmAndPrint = useCallback(
     async (orderId: string, prepMinutes: number) => {
-      setBusy(true)
       void stopPendingAlerts()
-      try {
-        const branchName = useTerminalStore.getState().branch_name
-        const existing = useOrderStore
-          .getState()
-          .orders.find((o) => o.order_id === orderId) as OrderDetails | undefined
 
-        let printPromise: ReturnType<typeof printOrderReceipt> | null = null
-        if (existing && (existing.items?.length ?? 0) > 0) {
-          const earlyReceipt = buildOrderReceipt(existing, prepMinutes, { branchName })
-          printPromise = printOrderReceipt(earlyReceipt)
-        }
+      const branchName = useTerminalStore.getState().branch_name
+      const existing = useOrderStore
+        .getState()
+        .orders.find((o) => o.order_id === orderId) as OrderDetails | undefined
 
-        const confirmed = await ordersApi.confirmOrder(orderId, prepMinutes)
-        useOrderStore.getState().upsertOrder(confirmed)
+      if (existing) {
+        useOrderStore.getState().upsertOrder({
+          ...existing,
+          status: 'accepted',
+          estimatedPrepMinutes: prepMinutes,
+        })
+      }
 
-        if (!printPromise) {
-          const receipt = buildOrderReceipt(confirmed, prepMinutes, { branchName })
-          printPromise = printOrderReceipt(receipt)
-        }
+      void (async () => {
+        try {
+          let printPromise: ReturnType<typeof printOrderReceipt> | null = null
+          if (existing && (existing.items?.length ?? 0) > 0) {
+            const earlyReceipt = buildOrderReceipt(existing, prepMinutes, { branchName })
+            printPromise = printOrderReceipt(earlyReceipt)
+          }
 
-        const printResult = await printPromise
-        const delivery = !String(confirmed.delivery_type ?? '')
-          .toLowerCase()
-          .match(/pickup|abhol/)
-        if (delivery && !resolveCourierUrl(confirmed)) {
-          console.warn('Delivery order missing courier URL/token — QR will not print', orderId)
+          const confirmed = await ordersApi.confirmOrder(orderId, prepMinutes)
+          useOrderStore.getState().upsertOrder(confirmed)
+
+          if (!printPromise) {
+            const receipt = buildOrderReceipt(confirmed, prepMinutes, { branchName })
+            printPromise = printOrderReceipt(receipt)
+          }
+
+          const printResult = await printPromise
+          const delivery = !String(confirmed.delivery_type ?? '')
+            .toLowerCase()
+            .match(/pickup|abhol/)
+          if (delivery && !resolveCourierUrl(confirmed)) {
+            console.warn('Delivery order missing courier URL/token — QR will not print', orderId)
+          }
+          if (!printResult.ok) {
+            console.warn('Receipt print failed:', printResult.error)
+          }
+        } catch (err) {
+          console.error(err)
+          if (existing) {
+            useOrderStore.getState().upsertOrder({ ...existing, status: 'pending' })
+          }
         }
-        if (!printResult.ok) {
-          console.warn('Receipt print failed:', printResult.error)
-        }
-        return {
-          confirmed,
-          printOk: printResult.ok,
-          message: printResult.ok
-            ? t('acceptedPrinted')
-            : `${t('acceptedNoPrint')} ${printResult.error ?? ''}`.trim(),
-        }
-      } catch (err) {
-        console.error(err)
-        throw err
-      } finally {
-        setBusy(false)
+      })()
+
+      return {
+        confirmed: existing ? { ...existing, status: 'accepted' as const } : null,
+        printOk: true,
+        message: t('acceptedPrinted'),
       }
     },
     [t],
   )
 
-  return { confirmAndPrint, busy }
+  return { confirmAndPrint, busy: false }
 }
