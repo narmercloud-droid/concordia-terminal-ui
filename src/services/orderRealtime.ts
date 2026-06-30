@@ -1,5 +1,6 @@
 import type { Socket } from 'socket.io-client'
 import { createSocket, disconnectSocket, getSocket } from '../sockets/socket.js'
+import { ordersApi } from '../api/orders.js'
 import { useOrderStore } from '../store/orderStore.js'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { mapApiOrder } from '../utils/orderMap.js'
@@ -90,6 +91,12 @@ export function startOrderRealtime() {
     const order = mapApiOrder(payload)
     if (!isBerlinToday(order.createdAt)) return
     useOrderStore.getState().upsertOrder(order)
+    if ((order.items?.length ?? 0) === 0) {
+      void ordersApi.getOrderDetails(order.order_id).then((full) => {
+        useOrderStore.getState().upsertOrder(full)
+      })
+    }
+    void warmPrinter()
     if (!useTerminalStore.getState().ordersPaused) {
       void bringAppToFront()
     }

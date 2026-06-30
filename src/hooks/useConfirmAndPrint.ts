@@ -29,7 +29,7 @@ export function useConfirmAndPrint() {
   const t = useI18n((s) => s.t)
 
   const confirmAndPrint = useCallback(
-    async (orderId: string, prepMinutes: number) => {
+    (orderId: string, prepMinutes: number) => {
       void stopPendingAlerts()
 
       const branchName = useTerminalStore.getState().branch_name
@@ -45,39 +45,39 @@ export function useConfirmAndPrint() {
         })
       }
 
-      void (async () => {
-        try {
-          let printPromise: ReturnType<typeof printOrderReceipt> | null = null
-          if (existing && (existing.items?.length ?? 0) > 0) {
-            const earlyReceipt = buildOrderReceipt(existing, prepMinutes, { branchName })
-            printPromise = printOrderReceipt(earlyReceipt)
-          }
+      const printSource =
+        existing && (existing.items?.length ?? 0) > 0 ? existing : null
+      if (printSource) {
+        const earlyReceipt = buildOrderReceipt(printSource, prepMinutes, { branchName })
+        void printOrderReceipt(earlyReceipt)
+      }
 
-          const confirmed = await ordersApi.confirmOrder(orderId, prepMinutes)
+      void ordersApi
+        .confirmOrder(orderId, prepMinutes)
+        .then((confirmed) => {
           useOrderStore.getState().upsertOrder(confirmed)
 
-          if (!printPromise) {
+          if (!printSource) {
             const receipt = buildOrderReceipt(confirmed, prepMinutes, { branchName })
-            printPromise = printOrderReceipt(receipt)
+            void printOrderReceipt(receipt).then((printResult) => {
+              const delivery = !String(confirmed.delivery_type ?? '')
+                .toLowerCase()
+                .match(/pickup|abhol/)
+              if (delivery && !resolveCourierUrl(confirmed)) {
+                console.warn('Delivery order missing courier URL/token — QR will not print', orderId)
+              }
+              if (!printResult.ok) {
+                console.warn('Receipt print failed:', printResult.error)
+              }
+            })
           }
-
-          const printResult = await printPromise
-          const delivery = !String(confirmed.delivery_type ?? '')
-            .toLowerCase()
-            .match(/pickup|abhol/)
-          if (delivery && !resolveCourierUrl(confirmed)) {
-            console.warn('Delivery order missing courier URL/token — QR will not print', orderId)
-          }
-          if (!printResult.ok) {
-            console.warn('Receipt print failed:', printResult.error)
-          }
-        } catch (err) {
+        })
+        .catch((err) => {
           console.error(err)
           if (existing) {
             useOrderStore.getState().upsertOrder({ ...existing, status: 'pending' })
           }
-        }
-      })()
+        })
 
       return {
         confirmed: existing ? { ...existing, status: 'accepted' as const } : null,

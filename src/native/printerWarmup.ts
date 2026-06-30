@@ -2,6 +2,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core'
 
 interface KingtopPrintPlugin {
   isAvailable(): Promise<{ available: boolean }>
+  warmUp?(): Promise<{ available: boolean }>
 }
 
 const KingtopPrint = registerPlugin<KingtopPrintPlugin>('KingtopPrint')
@@ -13,7 +14,7 @@ export function warmPrinter(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return Promise.resolve()
   if (warmPromise) return warmPromise
 
-  warmPromise = KingtopPrint.isAvailable()
+  warmPromise = (KingtopPrint.warmUp?.() ?? KingtopPrint.isAvailable())
     .then(() => undefined)
     .catch(() => undefined)
 

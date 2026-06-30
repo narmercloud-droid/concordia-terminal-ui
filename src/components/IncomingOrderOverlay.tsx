@@ -129,11 +129,11 @@ export function IncomingOrderOverlay() {
     }
   }
 
-  const handleAcceptAndPrint = async () => {
+  const handleAcceptAndPrint = () => {
     setLoadError('')
     void stopPendingAlerts()
     try {
-      const result = await confirmAndPrint(order.order_id, prepMinutes)
+      const result = confirmAndPrint(order.order_id, prepMinutes)
       setToastMessage(result.message)
       window.setTimeout(() => setToastMessage(''), 4000)
     } catch {

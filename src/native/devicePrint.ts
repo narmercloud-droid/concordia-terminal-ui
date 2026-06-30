@@ -84,9 +84,6 @@ async function tryKingtopPrint(
   receipt: OrderReceipt,
 ): Promise<{ ok: boolean; error?: string; driver: string; qrPrinted?: boolean; attempted: boolean } | null> {
   try {
-    const kingtop = await KingtopPrint.isAvailable()
-    if (!kingtop.available) return null
-
     const needsQr = Boolean(receipt.qrUrl?.trim())
     const printed = await printReceiptOnPlugin(KingtopPrint, receipt)
     if (needsQr && !printed.qrPrinted) {

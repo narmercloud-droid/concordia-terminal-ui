@@ -121,6 +121,11 @@ public class KingtopPrintPlugin extends Plugin {
     }
 
     private void powerOnAndConnect() throws Exception {
+        Method isConnected = handlerClass.getMethod("isConnected");
+        if (Boolean.TRUE.equals(isConnected.invoke(handler))) {
+            return;
+        }
+
         try {
             Method powerOn = settingsClass.getMethod("mPosPowerOn");
             powerOn.invoke(settings);
@@ -128,21 +133,32 @@ public class KingtopPrintPlugin extends Plugin {
             // optional on some firmware builds
         }
 
-        // Z90/Z91 SDK notes: brief wait before serial connect
-        Thread.sleep(500);
+        Thread.sleep(100);
 
-        Method isConnected = handlerClass.getMethod("isConnected");
-        boolean connected = Boolean.TRUE.equals(isConnected.invoke(handler));
-        if (!connected) {
-            Method connect = handlerClass.getMethod("connect");
-            Object connectResult = connect.invoke(handler);
-            Log.i(TAG, "connect() => " + String.valueOf(connectResult));
-            Thread.sleep(150);
-        }
+        Method connect = handlerClass.getMethod("connect");
+        Object connectResult = connect.invoke(handler);
+        Log.i(TAG, "connect() => " + String.valueOf(connectResult));
+        Thread.sleep(50);
     }
 
     private synchronized boolean ensureReady() {
-        if (initialized()) return true;
+        if (initialized()) {
+            try {
+                Method isConnected = handlerClass.getMethod("isConnected");
+                if (Boolean.TRUE.equals(isConnected.invoke(handler))) {
+                    return true;
+                }
+                powerOnAndConnect();
+                return true;
+            } catch (Exception e) {
+                Log.w(TAG, "Reconnect failed, reinitializing SDK", e);
+                handler = null;
+                settings = null;
+                handlerClass = null;
+                settingsClass = null;
+                initPath = "";
+            }
+        }
 
         Context context = getContext();
         for (String handlerName : HANDLER_CLASSES) {
@@ -267,6 +283,33 @@ public class KingtopPrintPlugin extends Plugin {
             throw lastError;
         }
         throw new IllegalStateException("No print method succeeded");
+    }
+
+    @Override
+    public void load() {
+        super.load();
+        new Thread(() -> {
+            try {
+                if (ensureReady()) {
+                    Log.i(TAG, "Printer SDK pre-warmed on plugin load");
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Printer pre-warm failed", e);
+            }
+        }).start();
+    }
+
+    @PluginMethod
+    public void warmUp(PluginCall call) {
+        new Thread(() -> {
+            JSObject result = new JSObject();
+            boolean available = ensureReady();
+            result.put("available", available);
+            if (!available) {
+                result.put("reason", lastInitError);
+            }
+            resolveOnMain(call, result);
+        }).start();
     }
 
     @PluginMethod

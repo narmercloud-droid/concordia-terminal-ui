@@ -7,7 +7,7 @@ import { Toast } from '../components/Toast.js'
 import { CountdownBadge } from '../components/CountdownBadge.js'
 import type { OrderDetails as OrderDetailsType, OrderItem } from '../types/order.js'
 import { formatCurrency, formatDateTime } from '../utils/format.js'
-import { buildOrderReceipt, resolveCourierUrl } from '../utils/orderTicket.js'
+import { buildOrderReceipt } from '../utils/orderTicket.js'
 import { printOrderReceipt } from '../native/devicePrint.js'
 import { getStageActions } from '../utils/orderStages.js'
 import type { StageAction } from '../utils/orderStages.js'
@@ -16,7 +16,7 @@ import { isScheduledOrder } from '../utils/orderCountdown.js'
 import { useI18n } from '../i18n/index.js'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { useOrderStatusUpdate } from '../hooks/useOrderStatusUpdate.js'
-import { defaultPrepMinutes, prepPresetsFor } from '../hooks/useConfirmAndPrint.js'
+import { defaultPrepMinutes, prepPresetsFor, useConfirmAndPrint } from '../hooks/useConfirmAndPrint.js'
 import { getStatusLabelKey, orderShortId } from '../utils/orderDisplay.js'
 import { RejectOrderDialog } from '../components/RejectOrderDialog.js'
 import '../App.css'
@@ -30,12 +30,12 @@ const OrderDetails = () => {
   const [prepMinutes, setPrepMinutes] = useState(45)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [confirming, setConfirming] = useState(false)
   const [rejecting, setRejecting] = useState(false)
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
   const navigate = useNavigate()
   const { updateWithAction, isUpdating } = useOrderStatusUpdate()
+  const { confirmAndPrint } = useConfirmAndPrint()
 
   const paymentLabel = (method?: string) => {
     const m = (method ?? 'cash').toLowerCase()
@@ -86,39 +86,17 @@ const OrderDetails = () => {
 
   const stageActions = order ? getStageActions(order) : []
 
-  const handleConfirm = async () => {
+  const handleConfirm = () => {
     if (!order_id || !order || !isPending) return
-    setConfirming(true)
     setError('')
-    try {
-      let confirmed = await ordersApi.confirmOrder(order_id, prepMinutes)
-      const delivery = !String(confirmed.delivery_type ?? '')
-        .toLowerCase()
-        .match(/pickup|abhol/)
-      if (delivery && !resolveCourierUrl(confirmed)) {
-        try {
-          confirmed = await ordersApi.getOrderDetails(order_id)
-        } catch {
-          // use confirm payload as-is
-        }
-      }
-      const branchName = useTerminalStore.getState().branch_name
-      const receipt = buildOrderReceipt(confirmed, prepMinutes, { branchName })
-      const printResult = await printOrderReceipt(receipt)
-      setToastMessage(
-        printResult.ok ? t('acceptedPrinted') : `${t('acceptedNoPrint')} ${printResult.error ?? ''}`,
-      )
-      window.setTimeout(() => {
-        navigate('/orders', {
-          state: { toast: printResult.ok ? t('acceptedPrinted') : t('acceptedNoPrint') },
-        })
-      }, 900)
-    } catch (err) {
-      setError(t('confirmError'))
-      console.error(err)
-    } finally {
-      setConfirming(false)
-    }
+    const result = confirmAndPrint(order_id, prepMinutes)
+    setOrder({ ...order, status: 'accepted', estimatedPrepMinutes: prepMinutes })
+    setToastMessage(result.message)
+    window.setTimeout(() => {
+      navigate('/orders', {
+        state: { toast: result.message },
+      })
+    }, 400)
   }
 
   const handleReject = async (reason: string) => {
@@ -323,8 +301,8 @@ const OrderDetails = () => {
                   >
                     {rejecting ? t('rejecting') : t('reject')}
                   </button>
-                  <button className="button primary" type="button" onClick={handleConfirm} disabled={confirming}>
-                    {confirming ? t('confirming') : t('acceptPrint')}
+                  <button className="button primary" type="button" onClick={handleConfirm}>
+                    {t('acceptPrint')}
                   </button>
                 </>
               ) : null}
