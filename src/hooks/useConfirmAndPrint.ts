@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import { ordersApi } from '../api/orders.js'
 import { useOrderStore } from '../store/orderStore.js'
 import { useTerminalStore } from '../store/terminalStore.js'
-import { buildOrderReceipt, resolveCourierUrl } from '../utils/orderTicket.js'
+import { buildOrderReceipt } from '../utils/orderTicket.js'
 import { printOrderReceipt } from '../native/devicePrint.js'
 import { stopPendingAlerts } from '../utils/notificationSound.js'
 import { isPickup, minutesUntilScheduled } from '../utils/orderCountdown.js'
@@ -43,41 +43,16 @@ export function useConfirmAndPrint() {
           status: 'accepted',
           estimatedPrepMinutes: prepMinutes,
         })
+
+        const receipt = buildOrderReceipt(existing, prepMinutes, { branchName })
+        void printOrderReceipt(receipt)
       }
 
-      const printSource =
-        existing && (existing.items?.length ?? 0) > 0 ? existing : null
-      if (printSource) {
-        const earlyReceipt = buildOrderReceipt(printSource, prepMinutes, { branchName })
-        void printOrderReceipt(earlyReceipt)
-      }
-
-      void ordersApi
-        .confirmOrder(orderId, prepMinutes)
-        .then((confirmed) => {
-          useOrderStore.getState().upsertOrder(confirmed)
-
-          if (!printSource) {
-            const receipt = buildOrderReceipt(confirmed, prepMinutes, { branchName })
-            void printOrderReceipt(receipt).then((printResult) => {
-              const delivery = !String(confirmed.delivery_type ?? '')
-                .toLowerCase()
-                .match(/pickup|abhol/)
-              if (delivery && !resolveCourierUrl(confirmed)) {
-                console.warn('Delivery order missing courier URL/token — QR will not print', orderId)
-              }
-              if (!printResult.ok) {
-                console.warn('Receipt print failed:', printResult.error)
-              }
-            })
-          }
-        })
-        .catch((err) => {
-          console.error(err)
-          if (existing) {
-            useOrderStore.getState().upsertOrder({ ...existing, status: 'pending' })
-          }
-        })
+      void ordersApi.confirmOrder(orderId, prepMinutes).then((confirmed) => {
+        useOrderStore.getState().upsertOrder(confirmed)
+      }).catch((err) => {
+        console.error('Confirm API failed (order stays accepted locally):', err)
+      })
 
       return {
         confirmed: existing ? { ...existing, status: 'accepted' as const } : null,

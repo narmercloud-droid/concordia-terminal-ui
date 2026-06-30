@@ -168,14 +168,32 @@ public class SunmiPrintPlugin extends Plugin {
             pending.runOnce();
             return;
         }
-        if (attempt >= 24) {
+        if (attempt >= 30) {
             pendingPrints.remove(pending);
             if (!pending.call.isReleased()) {
                 pending.call.reject("Sunmi printer service not available. Check paper and restart the device.");
             }
             return;
         }
-        mainHandler.postDelayed(() -> waitForPrinter(pending, attempt + 1), 250);
+        mainHandler.postDelayed(() -> waitForPrinter(pending, attempt + 1), 100);
+    }
+
+    private void safeCutPaper() {
+        try {
+            sunmiPrinterService.cutPaper(null);
+        } catch (Exception e) {
+            Log.w(TAG, "cutPaper unsupported on this model — extra line feed only");
+            try {
+                sunmiPrinterService.lineWrap(6, null);
+            } catch (RemoteException ignored) {
+                // ignore
+            }
+        }
+    }
+
+    private void finishPrintJob() throws RemoteException {
+        sunmiPrinterService.lineWrap(3, null);
+        safeCutPaper();
     }
 
     private void executePrintText(PluginCall call, String text) {
@@ -192,8 +210,7 @@ public class SunmiPrintPlugin extends Plugin {
                 }
                 return;
             }
-            sunmiPrinterService.lineWrap(4, null);
-            sunmiPrinterService.cutPaper(null);
+            finishPrintJob();
             if (!call.isReleased()) {
                 JSObject result = new JSObject();
                 result.put("ok", true);
@@ -221,37 +238,44 @@ public class SunmiPrintPlugin extends Plugin {
     private void executePrintReceiptInner(PluginCall call, String text, String qrUrl, String footerText) {
         try {
             sunmiPrinterService.printerInit(null);
-            boolean printed = false;
-            boolean bitmapAttempted = false;
-
-            try {
-                Bitmap bitmap = ReceiptBitmapRenderer.render(
-                    text != null ? text : "",
-                    qrUrl != null ? qrUrl.trim() : "",
-                    footerText != null ? footerText : ""
-                );
-                bitmapAttempted = true;
-                printed = awaitPrintBitmap(bitmap);
-                Log.i(TAG, "Receipt bitmap print => " + printed);
-            } catch (Exception bitmapError) {
-                Log.w(TAG, "Receipt bitmap render failed, using text fallback", bitmapError);
-            }
-
-            // Only fall back to plain text when bitmap rendering failed — never when
-            // printBitmap was already submitted (avoids double bon on callback race).
-            if (!bitmapAttempted) {
-                StringBuilder fallback = new StringBuilder(stripMarkers(text != null ? text : ""));
-                if (footerText != null && !footerText.trim().isEmpty()) {
-                    fallback.append('\n').append(stripMarkers(footerText));
-                }
-                printed = awaitPrintText(fallback.toString());
-                Log.i(TAG, "Receipt text fallback => " + printed);
-            }
-
-            sunmiPrinterService.lineWrap(3, null);
-            sunmiPrinterService.cutPaper(null);
-
             boolean needsQr = qrUrl != null && !qrUrl.trim().isEmpty();
+            boolean printed = false;
+
+            if (!needsQr) {
+                StringBuilder body = new StringBuilder(stripMarkers(text != null ? text : ""));
+                if (footerText != null && !footerText.trim().isEmpty()) {
+                    body.append('\n').append(stripMarkers(footerText));
+                }
+                printed = awaitPrintText(body.toString());
+                Log.i(TAG, "Receipt text-only print => " + printed);
+            } else {
+                boolean bitmapAttempted = false;
+                try {
+                    Bitmap bitmap = ReceiptBitmapRenderer.render(
+                        text != null ? text : "",
+                        qrUrl.trim(),
+                        footerText != null ? footerText : ""
+                    );
+                    bitmapAttempted = true;
+                    printed = awaitPrintBitmap(bitmap);
+                    Log.i(TAG, "Receipt bitmap print => " + printed);
+                } catch (Exception bitmapError) {
+                    Log.w(TAG, "Receipt bitmap render failed, using text fallback", bitmapError);
+                }
+
+                if (!printed) {
+                    StringBuilder fallback = new StringBuilder(stripMarkers(text != null ? text : ""));
+                    if (footerText != null && !footerText.trim().isEmpty()) {
+                        fallback.append('\n').append(stripMarkers(footerText));
+                    }
+                    fallback.append("\n\n").append(qrUrl.trim());
+                    printed = awaitPrintText(fallback.toString());
+                    Log.i(TAG, "Receipt QR text fallback => " + printed);
+                }
+            }
+
+            finishPrintJob();
+
             if (!printed) {
                 call.reject("Sunmi receipt print failed");
                 return;
@@ -302,7 +326,7 @@ public class SunmiPrintPlugin extends Plugin {
             }
         });
 
-        boolean completed = latch.await(12, TimeUnit.SECONDS);
+        boolean completed = latch.await(4, TimeUnit.SECONDS);
         if (!completed) {
             Log.w(TAG, "printBitmap timed out waiting for callback");
         }
@@ -345,7 +369,7 @@ public class SunmiPrintPlugin extends Plugin {
         });
 
         try {
-            boolean completed = latch.await(12, TimeUnit.SECONDS);
+            boolean completed = latch.await(4, TimeUnit.SECONDS);
             if (!completed) {
                 Log.w(TAG, "printText timed out waiting for callback");
             }

@@ -116,8 +116,11 @@ async function printOrderReceiptInner(
 
   if (sunmiFirst) {
     const sunmi = await trySunmiPrint(receipt)
-    if (sunmi.attempted) {
-      return sunmi
+    return {
+      ok: sunmi.ok,
+      error: sunmi.error,
+      driver: sunmi.driver,
+      qrPrinted: sunmi.qrPrinted,
     }
   }
 
