@@ -108,6 +108,36 @@ async function tryKingtopPrint(
   }
 }
 
+async function tryZcsPrint(
+  receipt: OrderReceipt,
+): Promise<{ ok: boolean; error?: string; driver: string; qrPrinted?: boolean; attempted: boolean } | null> {
+  try {
+    const zcs = await ZcsPrint.isAvailable()
+    if (!zcs.available) {
+      return zcs.reason ? { ok: false, error: zcs.reason, driver: 'zcs', attempted: false } : null
+    }
+
+    const needsQr = Boolean(receipt.qrUrl?.trim())
+    const printed = await printReceiptOnPlugin(ZcsPrint, receipt)
+    if (needsQr && !printed.qrPrinted) {
+      return {
+        ok: false,
+        error: 'Delivery QR did not print',
+        driver: 'zcs',
+        qrPrinted: false,
+        attempted: true,
+      }
+    }
+    if (!printed.ok) {
+      return { ok: false, error: 'Receipt print failed', driver: 'zcs', qrPrinted: false, attempted: true }
+    }
+    return { ok: true, driver: 'zcs', qrPrinted: printed.qrPrinted, attempted: true }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'ZCS print failed'
+    return { ok: false, error: message, driver: 'zcs', attempted: true }
+  }
+}
+
 async function printOrderReceiptInner(
   receipt: OrderReceipt,
 ): Promise<{ ok: boolean; error?: string; driver?: string; qrPrinted?: boolean }> {
@@ -124,46 +154,30 @@ async function printOrderReceiptInner(
     }
   }
 
+  // Kingtop Z91/Z90 use the ZCS SDK — try it before Imagpay reflection (avoids silent no-ops).
+  const zcs = await tryZcsPrint(receipt)
+  if (zcs?.attempted && zcs.ok) {
+    return zcs
+  }
+
   const kingtop = await tryKingtopPrint(receipt)
   if (kingtop?.attempted && kingtop.ok) {
     return kingtop
   }
 
-  if (!sunmiFirst) {
-    const sunmi = await trySunmiPrint(receipt)
-    if (sunmi.attempted && sunmi.ok) {
-      return sunmi
-    }
-    if (sunmi.attempted && !sunmi.ok) {
-      return sunmi
-    }
+  const sunmi = await trySunmiPrint(receipt)
+  if (sunmi.attempted && sunmi.ok) {
+    return sunmi
   }
 
-  let zcsReason = ''
-  try {
-    const zcs = await ZcsPrint.isAvailable()
-    if (!zcs.available && zcs.reason) zcsReason = zcs.reason
-    if (zcs.available) {
-      const printed = await printReceiptOnPlugin(ZcsPrint, receipt)
-      if (printed.ok) {
-        if (needsQr && !printed.qrPrinted) {
-          return {
-            ok: false,
-            error: 'Delivery QR did not print',
-            driver: 'zcs',
-            qrPrinted: false,
-          }
-        }
-        return { ok: true, driver: 'zcs', qrPrinted: printed.qrPrinted }
-      }
-    }
-  } catch (err) {
-    zcsReason = err instanceof Error ? err.message : 'ZCS print failed'
-    console.warn('ZCS print path failed', err)
+  if (zcs?.attempted && !zcs.ok) {
+    return zcs
   }
-
   if (kingtop?.attempted && !kingtop.ok) {
     return kingtop
+  }
+  if (sunmi.attempted && !sunmi.ok) {
+    return sunmi
   }
 
   let networkError = ''
@@ -175,14 +189,15 @@ async function printOrderReceiptInner(
     networkError = network.error ?? ''
   }
 
-  let detail = sunmiFirst
-    ? 'Sunmi printer failed.'
-    : 'No supported printer found.'
+  let detail = 'No supported printer found.'
+  if (zcs?.error) {
+    detail += ` ZCS: ${zcs.error}.`
+  }
   if (kingtop?.error) {
     detail += ` Kingtop: ${kingtop.error}.`
   }
-  if (zcsReason) {
-    detail += ` ZCS: ${zcsReason}.`
+  if (sunmi.error) {
+    detail += ` Sunmi: ${sunmi.error}.`
   }
   if (networkError) {
     detail += ` Network: ${networkError}.`

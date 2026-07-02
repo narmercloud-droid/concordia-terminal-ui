@@ -86,17 +86,17 @@ const OrderDetails = () => {
 
   const stageActions = order ? getStageActions(order) : []
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!order_id || !order || !isPending) return
     setError('')
-    const result = confirmAndPrint(order_id, prepMinutes)
+    const result = await confirmAndPrint(order_id, prepMinutes)
     setOrder({ ...order, status: 'accepted', estimatedPrepMinutes: prepMinutes })
     setToastMessage(result.message)
     window.setTimeout(() => {
       navigate('/orders', {
         state: { toast: result.message },
       })
-    }, 400)
+    }, result.printOk ? 400 : 2500)
   }
 
   const handleReject = async (reason: string) => {

@@ -29,13 +29,16 @@ export function useConfirmAndPrint() {
   const t = useI18n((s) => s.t)
 
   const confirmAndPrint = useCallback(
-    (orderId: string, prepMinutes: number) => {
+    async (orderId: string, prepMinutes: number) => {
       void stopPendingAlerts()
 
       const branchName = useTerminalStore.getState().branch_name
       const existing = useOrderStore
         .getState()
         .orders.find((o) => o.order_id === orderId) as OrderDetails | undefined
+
+      let printOk = true
+      let printError = ''
 
       if (existing) {
         useOrderStore.getState().upsertOrder({
@@ -45,7 +48,9 @@ export function useConfirmAndPrint() {
         })
 
         const receipt = buildOrderReceipt(existing, prepMinutes, { branchName })
-        void printOrderReceipt(receipt)
+        const printResult = await printOrderReceipt(receipt)
+        printOk = printResult.ok
+        printError = printResult.error ?? ''
       }
 
       void ordersApi.confirmOrder(orderId, prepMinutes).then((confirmed) => {
@@ -56,8 +61,8 @@ export function useConfirmAndPrint() {
 
       return {
         confirmed: existing ? { ...existing, status: 'accepted' as const } : null,
-        printOk: true,
-        message: t('acceptedPrinted'),
+        printOk,
+        message: printOk ? t('acceptedPrinted') : `${t('printFailed')}: ${printError}`,
       }
     },
     [t],
