@@ -13,7 +13,7 @@ import { startBackendWarmup, stopBackendWarmup } from '../api/warmup.js'
 const API_URL =
   import.meta.env.VITE_API_URL ??
   import.meta.env.VITE_API_BASE_URL ??
-  'https://concordia-backend-web.onrender.com'
+  'https://concordia-backend-eu.onrender.com'
 
 let socket: Socket | null = null
 let startedForBranch = ''

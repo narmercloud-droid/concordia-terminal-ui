@@ -3,7 +3,7 @@ import axios from 'axios'
 const baseURL =
   import.meta.env.VITE_API_URL ??
   import.meta.env.VITE_API_BASE_URL ??
-  'https://concordia-backend-web.onrender.com'
+  'https://concordia-backend-eu.onrender.com'
 
 export const http = axios.create({
   baseURL,
