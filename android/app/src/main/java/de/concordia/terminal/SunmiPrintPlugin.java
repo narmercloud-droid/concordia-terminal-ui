@@ -108,8 +108,15 @@ public class SunmiPrintPlugin extends Plugin {
     @PluginMethod
     public void getDeviceKind(PluginCall call) {
         String manufacturer = Build.MANUFACTURER != null ? Build.MANUFACTURER.toLowerCase(Locale.US) : "";
+        String model = Build.MODEL != null ? Build.MODEL.toLowerCase(Locale.US) : "";
         JSObject result = new JSObject();
-        result.put("kind", manufacturer.contains("sunmi") ? "sunmi" : "other");
+        if (manufacturer.contains("sunmi")) {
+            result.put("kind", "sunmi");
+        } else if (manufacturer.contains("zcs") || model.contains("z91") || model.contains("z90")) {
+            result.put("kind", "zcs");
+        } else {
+            result.put("kind", "other");
+        }
         call.resolve(result);
     }
 
@@ -249,21 +256,28 @@ public class SunmiPrintPlugin extends Plugin {
                 printed = awaitPrintText(body.toString());
                 Log.i(TAG, "Receipt text-only print => " + printed);
             } else {
-                boolean bitmapAttempted = false;
+                boolean bitmapRendered = false;
                 try {
                     Bitmap bitmap = ReceiptBitmapRenderer.render(
                         text != null ? text : "",
                         qrUrl.trim(),
                         footerText != null ? footerText : ""
                     );
-                    bitmapAttempted = true;
-                    printed = awaitPrintBitmap(bitmap);
-                    Log.i(TAG, "Receipt bitmap print => " + printed);
+                    bitmapRendered = true;
+                    BitmapPrintResult bitmapResult = awaitPrintBitmap(bitmap);
+                    printed = bitmapResult.isSuccess();
+                    Log.i(TAG, "Receipt bitmap print => " + bitmapResult);
+                    // Text fallback after a dispatched bitmap causes duplicate tickets on V2s
+                    // when onPrintResult is slow or missing — only fallback if render failed.
+                    if (!printed && bitmapResult == BitmapPrintResult.DISPATCHED_UNCONFIRMED) {
+                        Log.w(TAG, "Bitmap dispatched without callback — assuming single print, skipping text fallback");
+                        printed = true;
+                    }
                 } catch (Exception bitmapError) {
                     Log.w(TAG, "Receipt bitmap render failed, using text fallback", bitmapError);
                 }
 
-                if (!printed) {
+                if (!printed && !bitmapRendered) {
                     StringBuilder fallback = new StringBuilder(stripMarkers(text != null ? text : ""));
                     if (footerText != null && !footerText.trim().isEmpty()) {
                         fallback.append('\n').append(stripMarkers(footerText));
@@ -271,6 +285,8 @@ public class SunmiPrintPlugin extends Plugin {
                     fallback.append("\n\n").append(qrUrl.trim());
                     printed = awaitPrintText(fallback.toString());
                     Log.i(TAG, "Receipt QR text fallback => " + printed);
+                } else if (!printed && bitmapRendered) {
+                    Log.w(TAG, "Bitmap print failed after render — skipping text fallback to avoid duplicate ticket");
                 }
             }
 
@@ -290,10 +306,21 @@ public class SunmiPrintPlugin extends Plugin {
         }
     }
 
-    private boolean awaitPrintBitmap(Bitmap bitmap) throws RemoteException, InterruptedException {
+    private enum BitmapPrintResult {
+        SUCCESS,
+        FAILED,
+        DISPATCHED_UNCONFIRMED;
+
+        boolean isSuccess() {
+            return this == SUCCESS || this == DISPATCHED_UNCONFIRMED;
+        }
+    }
+
+    private BitmapPrintResult awaitPrintBitmap(Bitmap bitmap) throws RemoteException, InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicBoolean success = new AtomicBoolean(false);
         AtomicBoolean finished = new AtomicBoolean(false);
+        AtomicBoolean dispatched = new AtomicBoolean(false);
 
         Runnable complete = () -> {
             if (finished.compareAndSet(false, true)) {
@@ -301,11 +328,15 @@ public class SunmiPrintPlugin extends Plugin {
             }
         };
 
+        dispatched.set(true);
         sunmiPrinterService.printBitmap(bitmap, new InnerResultCallback() {
             @Override
             public void onRunResult(boolean isSuccess) {
-                // Ignore — onPrintResult is authoritative; early onRunResult(false)
-                // previously triggered text fallback while bitmap was still printing.
+                // Some Sunmi firmware only reports success here — trust true, ignore false.
+                if (isSuccess) {
+                    success.set(true);
+                    complete.run();
+                }
             }
 
             @Override
@@ -326,11 +357,16 @@ public class SunmiPrintPlugin extends Plugin {
             }
         });
 
-        boolean completed = latch.await(4, TimeUnit.SECONDS);
+        boolean completed = latch.await(8, TimeUnit.SECONDS);
         if (!completed) {
-            Log.w(TAG, "printBitmap timed out waiting for callback");
+            if (dispatched.get()) {
+                Log.w(TAG, "printBitmap timed out after dispatch — ticket likely printed once");
+                return BitmapPrintResult.DISPATCHED_UNCONFIRMED;
+            }
+            Log.w(TAG, "printBitmap timed out before dispatch");
+            return BitmapPrintResult.FAILED;
         }
-        return success.get();
+        return success.get() ? BitmapPrintResult.SUCCESS : BitmapPrintResult.FAILED;
     }
 
     private boolean awaitPrintText(String printable) throws RemoteException {

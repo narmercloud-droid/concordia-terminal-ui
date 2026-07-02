@@ -1,7 +1,7 @@
 import { registerPlugin } from '@capacitor/core'
 
 import { SunmiPrint } from './sunmiPrint.js'
-import { isSunmiPrinterDevice } from './printerPlatform.js'
+import { getPrinterDeviceKind, isSunmiPrinterDevice, isZcsPrinterDevice } from './printerPlatform.js'
 import { printOnNetworkPrinter } from './networkPrint.js'
 import type { OrderReceipt } from '../utils/orderTicket.js'
 
@@ -143,6 +143,7 @@ async function printOrderReceiptInner(
 ): Promise<{ ok: boolean; error?: string; driver?: string; qrPrinted?: boolean }> {
   const needsQr = Boolean(receipt.qrUrl?.trim())
   const sunmiFirst = await useSunmiDevice()
+  const zcsDevice = await isZcsPrinterDevice()
 
   if (sunmiFirst) {
     const sunmi = await trySunmiPrint(receipt)
@@ -165,9 +166,14 @@ async function printOrderReceiptInner(
     return kingtop
   }
 
-  const sunmi = await trySunmiPrint(receipt)
-  if (sunmi.attempted && sunmi.ok) {
-    return sunmi
+  if (!zcsDevice) {
+    const sunmi = await trySunmiPrint(receipt)
+    if (sunmi.attempted && sunmi.ok) {
+      return sunmi
+    }
+    if (sunmi.attempted && !sunmi.ok) {
+      return sunmi
+    }
   }
 
   if (zcs?.attempted && !zcs.ok) {
@@ -175,9 +181,6 @@ async function printOrderReceiptInner(
   }
   if (kingtop?.attempted && !kingtop.ok) {
     return kingtop
-  }
-  if (sunmi.attempted && !sunmi.ok) {
-    return sunmi
   }
 
   let networkError = ''
@@ -195,9 +198,6 @@ async function printOrderReceiptInner(
   }
   if (kingtop?.error) {
     detail += ` Kingtop: ${kingtop.error}.`
-  }
-  if (sunmi.error) {
-    detail += ` Sunmi: ${sunmi.error}.`
   }
   if (networkError) {
     detail += ` Network: ${networkError}.`
@@ -220,11 +220,11 @@ export type PrinterDiagnostics = {
   sunmi: { available: boolean }
   zcs: { driverManagerFound: boolean; available: boolean; lastError: string }
   kingtop: { handlerClassesFound: string; available: boolean; lastError: string; initPath: string }
-  deviceKind: 'sunmi' | 'other'
+  deviceKind: 'sunmi' | 'zcs' | 'other'
 }
 
 export async function getPrinterDiagnostics(): Promise<PrinterDiagnostics> {
-  const deviceKind = (await isSunmiPrinterDevice()) ? 'sunmi' : 'other'
+  const deviceKind = (await getPrinterDeviceKind())
 
   let sunmiAvailable = false
   try {

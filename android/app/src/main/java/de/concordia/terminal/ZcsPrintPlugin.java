@@ -25,15 +25,6 @@ public class ZcsPrintPlugin extends Plugin {
     private static final String ZCS_PRINT_PACKAGE = "com.zcs.printer";
     private static final Charset PRINT_CHARSET = Charset.forName("GBK");
 
-    static {
-        try {
-            System.loadLibrary("SmartPosJni");
-            Log.i(TAG, "Loaded bundled libSmartPosJni");
-        } catch (UnsatisfiedLinkError e) {
-            Log.w(TAG, "Bundled libSmartPosJni unavailable", e);
-        }
-    }
-
     private final Object printLock = new Object();
 
     private String lastError = "SDK not initialized";
@@ -44,32 +35,8 @@ public class ZcsPrintPlugin extends Plugin {
 
     private ClassLoader resolveSdkLoader() throws Exception {
         if (sdkLoader != null) return sdkLoader;
-
-        try {
-            Class.forName("com.zcs.sdk.DriverManager");
-            sdkLoader = getClass().getClassLoader();
-            Log.i(TAG, "ZCS SDK on app classpath");
-            return sdkLoader;
-        } catch (ClassNotFoundException ignored) {
-            // expected — SDK ships in vendor APKs on device
-        }
-
-        for (String pkg : new String[] { ZCS_PRINT_PACKAGE, SMART_POS_PACKAGE }) {
-            try {
-                Context pkgContext = getContext().createPackageContext(
-                    pkg,
-                    Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY
-                );
-                Class.forName("com.zcs.sdk.DriverManager", true, pkgContext.getClassLoader());
-                sdkLoader = pkgContext.getClassLoader();
-                Log.i(TAG, "ZCS SDK loaded from " + pkg);
-                return sdkLoader;
-            } catch (Exception e) {
-                Log.w(TAG, "Could not load ZCS SDK from " + pkg, e);
-            }
-        }
-
-        throw new ClassNotFoundException("ZCS DriverManager not found in app or vendor packages");
+        sdkLoader = ZcsSdkBootstrap.resolveSdkLoader(getContext());
+        return sdkLoader;
     }
 
     private Class<?> loadSdkClass(String name) throws Exception {
@@ -117,7 +84,7 @@ public class ZcsPrintPlugin extends Plugin {
     }
 
     private synchronized boolean ensureReady() {
-        if (printer != null && formatClass != null) {
+        if (printer != null) {
             return true;
         }
 
@@ -133,7 +100,15 @@ public class ZcsPrintPlugin extends Plugin {
                 return false;
             }
 
-            formatClass = loadSdkClass("com.zcs.sdk.q.b");
+            try {
+                formatClass = loadSdkClass("com.zcs.sdk.q.b");
+            } catch (Exception formatError) {
+                formatClass = resolveFormatClass();
+                if (formatClass == null) {
+                    Log.w(TAG, "Format class unavailable — bitmap/vendor print only", formatError);
+                }
+            }
+
             ensureSysInit();
             printerSessionReady = false;
             lastError = "";
@@ -144,6 +119,37 @@ public class ZcsPrintPlugin extends Plugin {
             Log.w(TAG, "ZCS init failed", e);
             printer = null;
             formatClass = null;
+            return false;
+        }
+    }
+
+    /** Obfuscated PrintFormat class name varies by ZCS SDK build. */
+    private Class<?> resolveFormatClass() {
+        String[] candidates = {
+            "com.zcs.sdk.q.b",
+            "com.zcs.sdk.format.a",
+            "com.zcs.sdk.format.PrintFormat",
+            "com.zcs.sdk.b.a"
+        };
+        for (String name : candidates) {
+            try {
+                return loadSdkClass(name);
+            } catch (Exception ignored) {
+                // try next
+            }
+        }
+        return null;
+    }
+
+    private boolean tryVendorReceiptPrint(String text, String qrUrl, String footerText) {
+        try {
+            boolean ok = ZcsVendorPrint.printReceipt(getContext(), text, qrUrl, footerText);
+            if (ok) {
+                Log.i(TAG, "Printed via ZcsVendorPrint bitmap path");
+            }
+            return ok;
+        } catch (Exception e) {
+            Log.w(TAG, "Vendor bitmap print failed", e);
             return false;
         }
     }
@@ -241,6 +247,13 @@ public class ZcsPrintPlugin extends Plugin {
      * @param finalize when false (QR follows), skip SDK flush — it throws on Z91 and blocks the QR job.
      */
     private void printViaBitmapBuffer(String text, boolean finalize) throws Exception {
+        if (formatClass == null) {
+            if (!tryVendorReceiptPrint(text, "", "")) {
+                printViaRawBytes(text);
+            }
+            return;
+        }
+
         Method printLine = printer.getClass().getMethod("a", String.class, formatClass);
         String normalized = text.replace("\r\n", "\n");
 
@@ -560,7 +573,7 @@ public class ZcsPrintPlugin extends Plugin {
             lastError = e.getMessage();
         }
         result.put("driverManagerFound", driverManagerFound);
-        result.put("smartPosPackage", SMART_POS_PACKAGE);
+        result.put("smartPosPackage", ZcsSdkBootstrap.getSdkSourcePackage());
         result.put("available", ensureReady());
         result.put("lastError", lastError);
         call.resolve(result);
@@ -722,13 +735,19 @@ public class ZcsPrintPlugin extends Plugin {
     @PluginMethod
     public void printText(PluginCall call) {
         String text = call.getString("text", "");
-        if (!ensureReady()) {
-            call.reject("ZCS printer not available: " + lastError);
-            return;
-        }
 
         new Thread(() -> {
             try {
+                if (tryVendorReceiptPrint(text, "", "")) {
+                    JSObject result = new JSObject();
+                    result.put("ok", true);
+                    resolveOnMain(call, result);
+                    return;
+                }
+                if (!ensureReady()) {
+                    rejectOnMain(call, "ZCS printer not available: " + lastError);
+                    return;
+                }
                 printTextInternal(text);
                 JSObject result = new JSObject();
                 result.put("ok", true);
@@ -745,16 +764,26 @@ public class ZcsPrintPlugin extends Plugin {
         String text = call.getString("text", "");
         String qrUrl = call.getString("qrUrl");
         String footerText = call.getString("footerText", "");
-        if (!ensureReady()) {
-            call.reject("ZCS printer not available: " + lastError);
-            return;
-        }
 
         new Thread(() -> {
             try {
-                ReceiptPrintResult printed = printReceiptInternal(text, qrUrl, footerText);
                 String trimmedQr = qrUrl != null ? qrUrl.trim() : "";
                 boolean needsQr = !trimmedQr.isEmpty();
+
+                if (tryVendorReceiptPrint(text, qrUrl, footerText)) {
+                    JSObject result = new JSObject();
+                    result.put("ok", true);
+                    result.put("qrPrinted", !needsQr || trimmedQr.length() > 0);
+                    resolveOnMain(call, result);
+                    return;
+                }
+
+                if (!ensureReady()) {
+                    rejectOnMain(call, "ZCS printer not available: " + lastError);
+                    return;
+                }
+
+                ReceiptPrintResult printed = printReceiptInternal(text, qrUrl, footerText);
                 JSObject result = new JSObject();
                 result.put("ok", printed.bodyPrinted);
                 result.put("qrPrinted", !needsQr || printed.qrPrinted);

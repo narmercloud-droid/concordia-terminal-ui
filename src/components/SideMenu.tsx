@@ -23,11 +23,10 @@ function PrinterSettingsForm() {
       const z = d.zcs
       const k = d.kingtop
       setDiag(
-        `Sunmi: ${d.sunmi.available ? 'built-in printer OK' : 'not connected'}\n` +
-          `ZCS (Z91): ${z.driverManagerFound ? 'DriverManager found' : 'not found'}\n` +
-          `${z.available ? 'ZCS printer OK' : z.lastError || 'ZCS not ready'}\n` +
-          `Imagpay: ${k.handlerClassesFound}\n` +
-          `${k.available ? `OK (${k.initPath})` : k.lastError || 'not used'}`,
+        `Gerät: ${d.deviceKind === 'zcs' ? 'ZCS Z91 (Kingtop)' : d.deviceKind}\n` +
+          `ZCS Drucker: ${z.available ? 'bereit' : z.lastError || 'nicht bereit'}\n` +
+          `Imagpay SDK: ${k.available ? `OK (${k.initPath})` : k.lastError || 'nicht verwendet'}\n` +
+          `(Sunmi wird auf diesem Gerät nicht verwendet)`,
       )
     })
   }, [])

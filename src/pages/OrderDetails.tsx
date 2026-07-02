@@ -35,7 +35,7 @@ const OrderDetails = () => {
   const [toastMessage, setToastMessage] = useState('')
   const navigate = useNavigate()
   const { updateWithAction, isUpdating } = useOrderStatusUpdate()
-  const { confirmAndPrint } = useConfirmAndPrint()
+  const { confirmAndPrint, busy: confirming } = useConfirmAndPrint()
 
   const paymentLabel = (method?: string) => {
     const m = (method ?? 'cash').toLowerCase()
@@ -87,7 +87,7 @@ const OrderDetails = () => {
   const stageActions = order ? getStageActions(order) : []
 
   const handleConfirm = async () => {
-    if (!order_id || !order || !isPending) return
+    if (!order_id || !order || !isPending || confirming) return
     setError('')
     const result = await confirmAndPrint(order_id, prepMinutes)
     setOrder({ ...order, status: 'accepted', estimatedPrepMinutes: prepMinutes })
@@ -301,8 +301,8 @@ const OrderDetails = () => {
                   >
                     {rejecting ? t('rejecting') : t('reject')}
                   </button>
-                  <button className="button primary" type="button" onClick={handleConfirm}>
-                    {t('acceptPrint')}
+                  <button className="button primary" type="button" onClick={handleConfirm} disabled={confirming}>
+                    {confirming ? t('confirming') : t('acceptPrint')}
                   </button>
                 </>
               ) : null}

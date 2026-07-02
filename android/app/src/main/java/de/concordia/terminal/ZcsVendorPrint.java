@@ -12,14 +12,15 @@ import java.lang.reflect.Method;
  */
 final class ZcsVendorPrint {
     private static final String TAG = "ZcsVendorPrint";
-    private static final String ZCS_PRINT_PACKAGE = "com.zcs.printer";
 
     private ZcsVendorPrint() {}
 
     static boolean printReceipt(Context context, String text, String qrUrl, String footerText) {
         if (context == null) return false;
         try {
-            ClassLoader loader = resolveLoader(context);
+            ClassLoader loader = ZcsSdkBootstrap.resolveSdkLoader(context);
+            wakePrinterIfPossible(loader);
+
             Bitmap bitmap = ReceiptBitmapRenderer.render(
                 text != null ? text : "",
                 qrUrl != null ? qrUrl.trim() : "",
@@ -49,27 +50,68 @@ final class ZcsVendorPrint {
             }
             int code = (Integer) result;
             Log.i(TAG, "Vendor SDK print bitmap => " + code);
-            return code >= 0;
+            if (code >= 0) {
+                commitPaperForward(loader);
+                return true;
+            }
+            return false;
         } catch (Exception e) {
             Log.e(TAG, "Vendor silent print failed", e);
             return false;
         }
     }
 
-    private static ClassLoader resolveLoader(Context context) throws Exception {
-        for (String pkg : new String[] { ZCS_PRINT_PACKAGE, "com.szzcs.smartpos" }) {
-            try {
-                Context pkgContext = context.createPackageContext(
-                    pkg,
-                    Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY
-                );
-                Class.forName("com.zcs.sdk.DriverManager", true, pkgContext.getClassLoader());
-                return pkgContext.getClassLoader();
-            } catch (Exception ignored) {
-                // try next package
-            }
+    private static void commitPaperForward(ClassLoader loader) {
+        try {
+            Class<?> printerClass = Class.forName("com.zcs.sdk.g", true, loader);
+            java.lang.reflect.Field jniField = printerClass.getDeclaredField("g");
+            jniField.setAccessible(true);
+            Object jni = jniField.get(null);
+            if (jni == null) return;
+            java.lang.reflect.Method forward = jni.getClass().getMethod("sdkPrnPaperForward", int.class);
+            Object code = forward.invoke(jni, 32);
+            Log.i(TAG, "sdkPrnPaperForward(32) => " + String.valueOf(code));
+        } catch (Exception e) {
+            Log.w(TAG, "commitPaperForward failed (non-fatal)", e);
         }
-        throw new ClassNotFoundException("ZCS DriverManager not found in vendor packages");
+    }
+
+  /** Power the Z91 built-in printer before the first bitmap job. */
+    private static void wakePrinterIfPossible(ClassLoader loader) {
+        try {
+            Class<?> printerClass = Class.forName("com.zcs.sdk.g", true, loader);
+            java.lang.reflect.Field jniField = printerClass.getDeclaredField("g");
+            jniField.setAccessible(true);
+            Object jni = jniField.get(null);
+            if (jni == null) return;
+
+            try {
+                java.lang.reflect.Method sysInit = jni.getClass().getMethod("sdkSysInit");
+                Object code = sysInit.invoke(jni);
+                Log.i(TAG, "sdkSysInit => " + String.valueOf(code));
+            } catch (NoSuchMethodException ignored) {
+                // optional
+            }
+
+            try {
+                java.lang.reflect.Method volts = jni.getClass().getMethod("sdkZ91mVoltsOn");
+                Object code = volts.invoke(jni);
+                Log.i(TAG, "sdkZ91mVoltsOn => " + String.valueOf(code));
+            } catch (NoSuchMethodException ignored) {
+                // optional
+            }
+
+            try {
+                java.lang.reflect.Method select = jni.getClass().getMethod("sdkSelectPrnId", int.class);
+                select.invoke(jni, 0);
+            } catch (NoSuchMethodException ignored) {
+                // optional
+            }
+
+            Thread.sleep(80);
+        } catch (Exception e) {
+            Log.w(TAG, "wakePrinterIfPossible failed (continuing)", e);
+        }
     }
 
     private static Method findBitmapPrintMethod(Class<?> printerClass) {

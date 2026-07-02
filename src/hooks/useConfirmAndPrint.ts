@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { ordersApi } from '../api/orders.js'
 import { useOrderStore } from '../store/orderStore.js'
 import { useTerminalStore } from '../store/terminalStore.js'
@@ -27,46 +27,59 @@ export function prepPresetsFor(order: Pick<Order, 'delivery_type'>) {
 
 export function useConfirmAndPrint() {
   const t = useI18n((s) => s.t)
+  const [busy, setBusy] = useState(false)
+  const inFlightRef = useRef(false)
 
   const confirmAndPrint = useCallback(
     async (orderId: string, prepMinutes: number) => {
-      void stopPendingAlerts()
+      if (inFlightRef.current) {
+        return { confirmed: null, printOk: false, message: t('confirming') }
+      }
+      inFlightRef.current = true
+      setBusy(true)
 
-      const branchName = useTerminalStore.getState().branch_name
-      const existing = useOrderStore
-        .getState()
-        .orders.find((o) => o.order_id === orderId) as OrderDetails | undefined
+      try {
+        void stopPendingAlerts()
 
-      let printOk = true
-      let printError = ''
+        const branchName = useTerminalStore.getState().branch_name
+        const existing = useOrderStore
+          .getState()
+          .orders.find((o) => o.order_id === orderId) as OrderDetails | undefined
 
-      if (existing) {
-        useOrderStore.getState().upsertOrder({
-          ...existing,
-          status: 'accepted',
-          estimatedPrepMinutes: prepMinutes,
+        let printOk = true
+        let printError = ''
+
+        if (existing) {
+          useOrderStore.getState().upsertOrder({
+            ...existing,
+            status: 'accepted',
+            estimatedPrepMinutes: prepMinutes,
+          })
+
+          const receipt = buildOrderReceipt(existing, prepMinutes, { branchName })
+          const printResult = await printOrderReceipt(receipt)
+          printOk = printResult.ok
+          printError = printResult.error ?? ''
+        }
+
+        void ordersApi.confirmOrder(orderId, prepMinutes).then((confirmed) => {
+          useOrderStore.getState().upsertOrder(confirmed)
+        }).catch((err) => {
+          console.error('Confirm API failed (order stays accepted locally):', err)
         })
 
-        const receipt = buildOrderReceipt(existing, prepMinutes, { branchName })
-        const printResult = await printOrderReceipt(receipt)
-        printOk = printResult.ok
-        printError = printResult.error ?? ''
-      }
-
-      void ordersApi.confirmOrder(orderId, prepMinutes).then((confirmed) => {
-        useOrderStore.getState().upsertOrder(confirmed)
-      }).catch((err) => {
-        console.error('Confirm API failed (order stays accepted locally):', err)
-      })
-
-      return {
-        confirmed: existing ? { ...existing, status: 'accepted' as const } : null,
-        printOk,
-        message: printOk ? t('acceptedPrinted') : `${t('printFailed')}: ${printError}`,
+        return {
+          confirmed: existing ? { ...existing, status: 'accepted' as const } : null,
+          printOk,
+          message: printOk ? t('acceptedPrinted') : `${t('printFailed')}: ${printError}`,
+        }
+      } finally {
+        inFlightRef.current = false
+        setBusy(false)
       }
     },
     [t],
   )
 
-  return { confirmAndPrint, busy: false }
+  return { confirmAndPrint, busy }
 }
