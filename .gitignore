@@ -27,3 +27,13 @@ android/capacitor-cordova-android-plugins/build
 *.njsproj
 *.sln
 *.sw?
+
+# Local APK / reverse-engineering artifacts
+.tmp-*/
+*.apk
+*.zip
+ui*.xml
+
+# Python bytecode
+**/__pycache__/
+*.pyc
