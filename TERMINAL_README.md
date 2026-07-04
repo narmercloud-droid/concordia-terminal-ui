@@ -11,7 +11,9 @@ Kitchen terminal app for receiving website orders, setting prep time, and trigge
 
 The APK is built against:
 
-`https://concordia-backend-web.onrender.com`
+`https://api.concordiapizza.de`
+
+(Render host: `concordia-backend-eu.onrender.com`. Do not use the deprecated `concordia-backend-web` service.)
 
 Set `VITE_API_URL` in `.env.production` before rebuilding if the backend URL changes.
 
