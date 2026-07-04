@@ -1,4 +1,5 @@
 import type { Order } from '../types/order.js'
+import { isKitchenVisibleOrder } from './orderPayment.js'
 
 
 
@@ -19,9 +20,8 @@ const FINISHED = new Set([
 
 
 export function isPendingOrder(order: Order): boolean {
-
+  if (!isKitchenVisibleOrder(order)) return false
   return order.status === 'pending' || order.status === 'new'
-
 }
 
 

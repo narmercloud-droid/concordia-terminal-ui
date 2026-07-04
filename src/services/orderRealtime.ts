@@ -4,6 +4,7 @@ import { ordersApi } from '../api/orders.js'
 import { useOrderStore } from '../store/orderStore.js'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { mapApiOrder } from '../utils/orderMap.js'
+import { isKitchenVisibleOrder } from '../utils/orderPayment.js'
 import { isBerlinToday } from '../utils/berlinToday.js'
 import { bringAppToFront, startKeepAlive, stopKeepAlive } from '../native/terminalKeepAlive.js'
 import { warmPrinter } from '../native/printerWarmup.js'
@@ -93,6 +94,7 @@ export function startOrderRealtime() {
   const onNew = (payload: unknown) => {
     const order = mapApiOrder(payload)
     if (!isBerlinToday(order.createdAt)) return
+    if (!isKitchenVisibleOrder(order)) return
     useOrderStore.getState().upsertOrder(order)
     if ((order.items?.length ?? 0) === 0) {
       void ordersApi.getOrderDetails(order.order_id).then((full) => {

@@ -1,5 +1,6 @@
 import type { OrderDetails, OrderItem } from '../types/order.js'
 import { orderShortId } from './orderDisplay.js'
+import { isPaidOrder } from './orderPayment.js'
 
 /** 58mm printer ~32 chars at normal size */
 const WIDTH = 32
@@ -112,13 +113,7 @@ function formatAddressBlock(address?: string): string[] {
 }
 
 function isPaid(order: OrderDetails): boolean {
-  const method = (order.paymentMethod ?? '').toLowerCase()
-  return (
-    order.paymentStatus === 'paid' ||
-    method === 'paypal' ||
-    method === 'card' ||
-    method === 'klarna'
-  )
+  return isPaidOrder(order)
 }
 
 function paymentStatusLine(order: OrderDetails, pickup: boolean, paid: boolean): string {
