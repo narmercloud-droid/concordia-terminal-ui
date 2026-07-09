@@ -99,7 +99,7 @@ export const de = {
   connect: 'Terminal verbinden',
   connecting: 'Verbinden…',
   printerSettings: 'Drucker (Netzwerk)',
-  printerSettingsHint: 'Kingtop Z91: eingebauter Drucker — „Netzwerkdrucker“ aus lassen. Nur bei separatem Küchendrucker im WLAN aktivieren.',
+  printerSettingsHint: 'Sunmi V2s: eingebauter Drucker — „Netzwerkdrucker“ aus lassen. Nur bei separatem Küchendrucker im WLAN aktivieren.',
   printerNetworkEnabled: 'Netzwerkdrucker verwenden',
   printerIp: 'Drucker-IP (PC oder Netzwerkdrucker)',
   printerPort: 'Port',

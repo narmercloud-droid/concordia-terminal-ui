@@ -92,7 +92,7 @@ The device stays connected and receives new orders in real time.
 2. A tone plays when a new order arrives.
 3. Tap an order → review items.
 4. Set prep time (default 45 min delivery / 15 min pickup).
-5. Tap **Confirm time & Print** — the terminal prints the kitchen ticket on the built-in printer (Kingtop Z91 / Sunmi).
+5. Tap **Confirm time & Print** — the terminal prints the kitchen ticket on the built-in Sunmi printer (V2/V2s).
 6. Open **Tagesabschluss** for today's revenue summary (Lieferando-style).
 7. When shutting down for the day, open **Tagesabschluss** and tap **Bericht drucken** (manual only).
 
@@ -104,7 +104,7 @@ The device stays connected and receives new orders in real time.
 | "Invalid branch code" | Use `KEMPEN` (must exist in backend seed). |
 | Orders not loading | Check Wi‑Fi; backend may be waking from sleep (first request can take ~30s on Render free tier). |
 | No live updates | Status should show **Live updates on**; reconnect Wi‑Fi or restart app. |
-| Print does not run | Use **release** APK v1.3.4+. Kingtop Z91 uses Imagpay SDK (`prnStr` + `prnStart`). Check paper, power-cycle device, tap **Bon drucken** to reprint. If another POS app prints but Concordia does not, reinstall the latest APK from [concordia-updates](https://github.com/narmercloud-droid/concordia-updates/releases/latest). |
+| Print does not run | Use **release** APK v1.6.28+. Check 58 mm paper, power-cycle device, tap **Bon drucken** to reprint. Reinstall from [concordia-updates](https://github.com/narmercloud-droid/concordia-updates/releases/latest). |
 
 ## Rebuild after code changes
 

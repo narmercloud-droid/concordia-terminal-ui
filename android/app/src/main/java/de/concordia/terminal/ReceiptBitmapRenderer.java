@@ -50,7 +50,7 @@ final class ReceiptBitmapRenderer {
         }
     }
 
-    /** Header block only (branch, type, due time, order id) — avoids ZCS line-buffer clipping. */
+    /** Header block only (branch, type, due time, order id). */
     static Bitmap renderHeaderBlock(String body, int maxLines) {
         String[] lines = body.replace("\r\n", "\n").split("\n", -1);
         StringBuilder header = new StringBuilder();

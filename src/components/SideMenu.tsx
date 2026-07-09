@@ -20,13 +20,9 @@ function PrinterSettingsForm() {
 
   useEffect(() => {
     getPrinterDiagnostics().then((d) => {
-      const z = d.zcs
-      const k = d.kingtop
       setDiag(
-        `Gerät: ${d.deviceKind === 'zcs' ? 'ZCS Z91 (Kingtop)' : d.deviceKind}\n` +
-          `ZCS Drucker: ${z.available ? 'bereit' : z.lastError || 'nicht bereit'}\n` +
-          `Imagpay SDK: ${k.available ? `OK (${k.initPath})` : k.lastError || 'nicht verwendet'}\n` +
-          `(Sunmi wird auf diesem Gerät nicht verwendet)`,
+        `Gerät: ${d.deviceKind === 'sunmi' ? 'Sunmi' : 'Unbekannt'}\n` +
+          `Sunmi Drucker: ${d.sunmi.available ? 'bereit' : 'nicht bereit'}`,
       )
     })
   }, [])

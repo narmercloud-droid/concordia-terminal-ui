@@ -3,9 +3,6 @@
 
     <queries>
         <package android:name="woyou.aidlservice.jiuiv5" />
-        <package android:name="com.szzcs.smartpos" />
-        <package android:name="com.zcs.printer" />
-        <package android:name="io.cordova.sb_native_pos" />
     </queries>
 
     <application

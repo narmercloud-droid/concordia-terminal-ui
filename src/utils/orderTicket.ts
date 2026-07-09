@@ -5,7 +5,7 @@ import { isPaidOrder } from './orderPayment.js'
 /** 58mm printer ~32 chars at normal size */
 const WIDTH = 32
 
-/** Print markers interpreted by ZcsPrintPlugin / ReceiptBitmapRenderer */
+/** Print markers interpreted by SunmiPrintPlugin / ReceiptBitmapRenderer */
 const TIGHT = '@@TIGHT@@'
 const LARGE = '@@LARGE@@'
 const CENTER = '@@CENTER@@'

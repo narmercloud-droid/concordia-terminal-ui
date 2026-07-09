@@ -112,8 +112,6 @@ public class SunmiPrintPlugin extends Plugin {
         JSObject result = new JSObject();
         if (manufacturer.contains("sunmi")) {
             result.put("kind", "sunmi");
-        } else if (manufacturer.contains("zcs") || model.contains("z91") || model.contains("z90")) {
-            result.put("kind", "zcs");
         } else {
             result.put("kind", "other");
         }

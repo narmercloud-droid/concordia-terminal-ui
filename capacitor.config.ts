@@ -11,7 +11,7 @@ const config: CapacitorConfig = {
     androidScheme: 'https',
   },
   plugins: {
-    // Native HTTP bypasses WebView CORS (required on Z91 / Capacitor https://localhost origin).
+    // Native HTTP bypasses WebView CORS on Capacitor https://localhost origin.
     CapacitorHttp: {
       enabled: true,
     },

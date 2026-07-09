@@ -1,7 +1,6 @@
 package de.concordia.terminal;
 
 import android.app.ActivityManager;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
@@ -24,8 +23,6 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(SunmiPrintPlugin.class);
-        registerPlugin(ZcsPrintPlugin.class);
-        registerPlugin(KingtopPrintPlugin.class);
         registerPlugin(NetworkPrintPlugin.class);
         registerPlugin(AlertSoundPlugin.class);
         registerPlugin(TerminalKeepAlivePlugin.class);
@@ -33,32 +30,6 @@ public class MainActivity extends BridgeActivity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         enableImmersiveMode();
         tuneWebView();
-        warmUpVendorPrintStack();
-    }
-
-    private void warmUpVendorPrintStack() {
-        String manufacturer = Build.MANUFACTURER != null ? Build.MANUFACTURER.toLowerCase() : "";
-        if (manufacturer.contains("sunmi")) {
-            return;
-        }
-        new Thread(() -> {
-            try {
-                startService(new Intent().setComponent(
-                    new ComponentName("com.zcs.printer", "com.zcs.printer.LocalPrintService")
-                ));
-            } catch (Exception ignored) {
-                // optional vendor service
-            }
-            try {
-                getPackageManager().getPackageInfo("com.szzcs.smartpos", 0);
-                createPackageContext(
-                    "com.szzcs.smartpos",
-                    Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY
-                );
-            } catch (Exception ignored) {
-                // vendor demo app not installed
-            }
-        }).start();
     }
 
     @Override
