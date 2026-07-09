@@ -38,40 +38,37 @@ export function useConfirmAndPrint() {
       inFlightRef.current = true
       setBusy(true)
 
+      const previous =
+        useOrderStore.getState().orders.find((o) => o.order_id === orderId) as
+          | OrderDetails
+          | undefined
+
       try {
         void stopPendingAlerts()
 
+        const confirmed = await ordersApi.confirmOrder(orderId, prepMinutes)
+        useOrderStore.getState().upsertOrder(confirmed)
+
         const branchName = useTerminalStore.getState().branch_name
-        const existing = useOrderStore
-          .getState()
-          .orders.find((o) => o.order_id === orderId) as OrderDetails | undefined
-
-        let printOk = true
-        let printError = ''
-
-        if (existing) {
-          useOrderStore.getState().upsertOrder({
-            ...existing,
-            status: 'accepted',
-            estimatedPrepMinutes: prepMinutes,
-          })
-
-          const receipt = buildOrderReceipt(existing, prepMinutes, { branchName })
-          const printResult = await printOrderReceipt(receipt)
-          printOk = printResult.ok
-          printError = printResult.error ?? ''
-        }
-
-        void ordersApi.confirmOrder(orderId, prepMinutes).then((confirmed) => {
-          useOrderStore.getState().upsertOrder(confirmed)
-        }).catch((err) => {
-          console.error('Confirm API failed (order stays accepted locally):', err)
-        })
+        const receipt = buildOrderReceipt(confirmed, prepMinutes, { branchName })
+        const printResult = await printOrderReceipt(receipt)
 
         return {
-          confirmed: existing ? { ...existing, status: 'accepted' as const } : null,
-          printOk,
-          message: printOk ? t('acceptedPrinted') : `${t('printFailed')}: ${printError}`,
+          confirmed,
+          printOk: printResult.ok,
+          message: printResult.ok
+            ? t('acceptedPrinted')
+            : `${t('printFailed')}: ${printResult.error ?? ''}`,
+        }
+      } catch (err) {
+        if (previous) {
+          useOrderStore.getState().upsertOrder(previous)
+        }
+        console.error('Confirm order failed:', err)
+        return {
+          confirmed: null,
+          printOk: false,
+          message: t('confirmError'),
         }
       } finally {
         inFlightRef.current = false

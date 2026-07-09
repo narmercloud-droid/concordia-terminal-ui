@@ -145,6 +145,7 @@ export function startOrderRealtime() {
   socket.on('connect_error', onConnectError)
   socket.on('order:new', onNew)
   socket.on('order:confirmed', onConfirmed)
+  socket.on('order:rejected', onStatus)
   socket.on('order_update', onUpdate)
   socket.on('order_status', onStatus)
   socket.on('branch:status', onBranchStatus)

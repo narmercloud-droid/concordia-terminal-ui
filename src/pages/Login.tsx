@@ -15,8 +15,13 @@ function loginErrorMessage(err: unknown): string {
     if (!err.response) {
       return 'Cannot reach the server. Check Wi‑Fi and wait ~30s if the backend is waking up, then try again.'
     }
-    const body = err.response.data as { error?: string; message?: string } | undefined
-    const apiMsg = body?.error ?? body?.message
+    const body = err.response.data as
+      | { error?: string | { message?: string }; message?: string }
+      | undefined
+    const nestedError = body?.error
+    const apiMsg =
+      (typeof nestedError === "string" ? nestedError : nestedError?.message) ??
+      body?.message
     if (apiMsg) return apiMsg
     if (err.response.status === 404) {
       return 'Invalid branch code. Use KEMPEN (Kempen) or STRAELEN (Straelen).'
