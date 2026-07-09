@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { useOrderStore } from '../store/orderStore.js'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { SideMenu } from './SideMenu.js'
@@ -54,6 +54,17 @@ export const Header = () => {
         >
           <p className="terminal-name">{branch_name || t('appName')}</p>
         </button>
+        <nav className="header-nav">
+          <NavLink to="/orders" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+            {t('orders')}
+          </NavLink>
+          <NavLink to="/day-report" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+            {t('dayReport')}
+          </NavLink>
+          <NavLink to="/terminal-settings" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+            {t('terminalSettings')}
+          </NavLink>
+        </nav>
         <div className="header-actions">
           <ConnectionStatus />
           {ordersPaused ? <span className="header-paused-pill">{t('ordersPausedShort')}</span> : null}

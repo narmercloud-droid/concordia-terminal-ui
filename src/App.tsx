@@ -4,6 +4,7 @@ import Login from './pages/Login.js'
 import Orders from './pages/Orders.js'
 import OrderDetails from './pages/OrderDetails.js'
 import DayReport from './pages/DayReport.js'
+import TerminalSettings from './pages/TerminalSettings.js'
 import { Header } from './components/Header.js'
 import { ProtectedRoute } from './components/ProtectedRoute.js'
 import { useTerminalStore } from './store/terminalStore.js'
@@ -62,6 +63,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <DayReport />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/terminal-settings"
+            element={
+              <ProtectedRoute>
+                <TerminalSettings />
               </ProtectedRoute>
             }
           />

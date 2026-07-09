@@ -19,6 +19,7 @@ export const de = {
   pauseOrders: 'Bestellungen pausieren',
   resumeOrders: 'Bestellungen fortsetzen',
   dayReport: 'Tagesabschluss',
+  terminalSettings: 'Terminal-Einstellungen',
   language: 'Sprache',
   german: 'Deutsch',
   arabic: 'العربية',

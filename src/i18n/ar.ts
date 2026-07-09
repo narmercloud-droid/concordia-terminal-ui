@@ -21,6 +21,7 @@ export const ar: Record<TranslationKey, string> = {
   pauseOrders: 'إيقاف الطلبات',
   resumeOrders: 'استئناف الطلبات',
   dayReport: 'تقرير نهاية اليوم',
+  terminalSettings: 'إعدادات الطرفية',
   language: 'اللغة',
   german: 'Deutsch',
   arabic: 'العربية',

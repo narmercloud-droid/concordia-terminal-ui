@@ -1230,19 +1230,28 @@
 .header-nav {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .nav-link {
   padding: 10px 16px;
-  border-radius: 999px;
+  border-radius: 12px;
   text-decoration: none;
   color: #4b5563;
-  font-weight: 600;
+  font-weight: 700;
+  background: #f3f4f6;
 }
 
 .nav-link.active {
   background: #111827;
   color: #ffffff;
+}
+
+@media (max-width: 900px) {
+  .header-nav {
+    display: none;
+  }
 }
 
 .report-date {
