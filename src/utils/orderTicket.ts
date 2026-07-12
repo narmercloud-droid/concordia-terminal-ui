@@ -141,9 +141,22 @@ function splitCustomerNotes(notes?: string): string | undefined {
         l &&
         !l.startsWith('[PROMO]') &&
         !l.startsWith('[GUTSCHEIN]') &&
-        !l.startsWith('[GRATISGETRÄNK]'),
+        !l.startsWith('[GRATISGETRÄNK]') &&
+        !l.startsWith('[ERSTBESTELLUNG]'),
     )
   return lines.length ? lines.join('\n') : undefined
+}
+
+function extractFreeDrinkLabel(order: OrderDetails): string | null {
+  if (order.freeDrinkChoice?.trim()) return order.freeDrinkChoice.trim()
+  const notes = order.notes ?? ''
+  const match = notes.match(/\[GRATISGETRÄNK\]\s*(.+)/i)
+  return match?.[1]?.trim() ?? null
+}
+
+function isFirstCustomerOrder(order: OrderDetails): boolean {
+  if (order.isFirstOrder) return true
+  return String(order.notes ?? '').includes('[ERSTBESTELLUNG]')
 }
 
 function appendOrderNotes(lines: string[], notes?: string): void {
@@ -246,6 +259,13 @@ export function buildOrderReceipt(
     lines.push(...formatItemBlock(item))
   }
 
+  const freeDrink = extractFreeDrinkLabel(order)
+  if (freeDrink) {
+    lines.push(RULE)
+    lines.push(boldCenter('GRATISGETRÄNK'))
+    lines.push(`${BOLD}→ ${freeDrink}`)
+  }
+
   lines.push(RULE)
 
   const grossBeforeDiscount = subtotal + deliveryFee
@@ -266,6 +286,14 @@ export function buildOrderReceipt(
   lines.push(`${BOLD}${padLine('Gesamtbetrag', formatAmount(total))}`)
   lines.push(RULE)
   lines.push(paymentStatusLine(order, pickup, paid))
+
+  if (isFirstCustomerOrder(order)) {
+    lines.push(RULE)
+    lines.push(boldCenter('★ ERSTE BESTELLUNG ★'))
+    lines.push(center('Willkommen! Vielen Dank für'))
+    lines.push(center('Ihre erste Bestellung bei uns!'))
+  }
+
   lines.push(RULE)
   lines.push(`${BOLD}Kunde: ${formatCustomerName(order.customerName)}`)
 

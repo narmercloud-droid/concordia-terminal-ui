@@ -70,6 +70,12 @@ export const OrderCard = memo(function OrderCard({
           {order.scheduledFor ? (
             <span className="order-badge badge-scheduled">{t('scheduled')}</span>
           ) : null}
+          {order.freeDrinkChoice ? (
+            <span className="order-badge">{t('freeDrink')}</span>
+          ) : null}
+          {order.isFirstOrder ? (
+            <span className="order-badge">{t('firstOrder')}</span>
+          ) : null}
         </div>
       </button>
 

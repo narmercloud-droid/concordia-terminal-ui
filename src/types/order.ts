@@ -53,6 +53,8 @@ export interface Order {
   deliveryAddress?: string
   courierUrl?: string
   courierToken?: string
+  freeDrinkChoice?: string
+  isFirstOrder?: boolean
 }
 
 export interface OrderDetails extends Order {

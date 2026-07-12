@@ -25,6 +25,22 @@ function fulfillmentLabel(type: string | undefined, t: (key: TranslationKey) => 
   return type ?? '—'
 }
 
+function customerNotesOnly(notes?: string): string | undefined {
+  if (!notes) return undefined
+  const lines = notes
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(
+      (l) =>
+        l &&
+        !l.startsWith('[PROMO]') &&
+        !l.startsWith('[GUTSCHEIN]') &&
+        !l.startsWith('[GRATISGETRÄNK]') &&
+        !l.startsWith('[ERSTBESTELLUNG]'),
+    )
+  return lines.length ? lines.join('\n') : undefined
+}
+
 export function IncomingOrderOverlay() {
   const orders = useOrderStore((state) => state.orders)
   const ordersPaused = useTerminalStore((state) => state.ordersPaused)
@@ -106,6 +122,7 @@ export function IncomingOrderOverlay() {
   if (!order) return null
 
   const display = details ?? order
+  const customerNotes = customerNotesOnly(display.notes)
   const prepPresets = prepPresetsFor(display)
   const itemLines = (display.items ?? []).map((i) => ({
     key: i.id ?? `${i.name}-${i.quantity}`,
@@ -168,7 +185,15 @@ export function IncomingOrderOverlay() {
           </div>
 
           {display.deliveryAddress ? <p className="incoming-address">{display.deliveryAddress}</p> : null}
-          {display.notes ? <p className="incoming-note">{t('note')}: {display.notes}</p> : null}
+          {display.freeDrinkChoice ? (
+            <p className="incoming-note incoming-note--promo">
+              {t('freeDrink')}: {display.freeDrinkChoice}
+            </p>
+          ) : null}
+          {display.isFirstOrder ? (
+            <p className="incoming-note incoming-note--promo">{t('firstOrderWelcome')}</p>
+          ) : null}
+          {customerNotes ? <p className="incoming-note">{t('note')}: {customerNotes}</p> : null}
 
           <ul className="incoming-items incoming-items--scroll">
             {itemLines.map((row) => (

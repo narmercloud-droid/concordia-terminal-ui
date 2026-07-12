@@ -92,6 +92,10 @@ export function mapApiOrder(raw: any): Order {
     deliveryAddress: raw.deliveryAddress,
     courierUrl: raw.courierUrl ?? undefined,
     courierToken: raw.courierToken ?? undefined,
+    freeDrinkChoice: raw.freeDrinkChoice ?? undefined,
+    isFirstOrder:
+      raw.isFirstOrder === true ||
+      String(raw.notes ?? "").includes("[ERSTBESTELLUNG]"),
   }
 }
 

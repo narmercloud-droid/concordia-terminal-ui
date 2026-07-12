@@ -211,6 +211,18 @@ const OrderDetails = () => {
                   <strong>{order.deliveryAddress}</strong>
                 </div>
               ) : null}
+              {order.freeDrinkChoice ? (
+                <div className="detail-row">
+                  <span>{t('freeDrink')}</span>
+                  <strong>{order.freeDrinkChoice}</strong>
+                </div>
+              ) : null}
+              {order.isFirstOrder ? (
+                <div className="detail-row">
+                  <span>{t('firstOrder')}</span>
+                  <strong>{t('firstOrderWelcome')}</strong>
+                </div>
+              ) : null}
               {order.notes ? (
                 <div className="detail-row">
                   <span>{t('note')}</span>
