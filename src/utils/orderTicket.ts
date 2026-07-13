@@ -249,10 +249,10 @@ function formatItemBlock(item: OrderItem): string[] {
   const mainDesc = `${qty}x ${num}${item.name}`
 
   if (baseUnit > 0.009) {
-    lines.push(...formatPricedLine(mainDesc, baseUnit * qty, true))
+    lines.push(...formatPricedLine(mainDesc, baseUnit * qty, false))
   } else {
     for (const wrapped of wrapText(mainDesc, WIDTH)) {
-      lines.push(`${BOLD}${wrapped}`)
+      lines.push(wrapped)
     }
   }
 
