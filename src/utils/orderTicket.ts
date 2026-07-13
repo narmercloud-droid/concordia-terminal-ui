@@ -1,4 +1,4 @@
-import type { OrderDetails, OrderItem } from '../types/order.js'
+import type { OrderDetails, OrderItem, OrderItemVariant } from '../types/order.js'
 import { orderShortId } from './orderDisplay.js'
 import { isPaidOrder } from './orderPayment.js'
 
@@ -206,38 +206,70 @@ function appendOrderNotes(lines: string[], notes?: string): void {
   }
 }
 
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
 function itemModifiers(item: OrderItem): OrderItem['extras'] {
   return [...(item.extras ?? []), ...(item.toppings ?? [])]
 }
 
 function itemLineTotal(item: OrderItem): number {
-  // Backend stores the full unit price in `price` (variant base + extras included).
-  // Variants/extras rows are kitchen labels — do not add their prices again.
   return item.quantity * item.price
+}
+
+function formatPricedLine(left: string, amount: number, bold = false): string[] {
+  const right = formatAmount(amount)
+  if (left.length + right.length + 1 <= WIDTH) {
+    return [`${bold ? BOLD : ''}${padLine(left, right)}`]
+  }
+  const lines: string[] = []
+  for (const wrapped of wrapText(left, WIDTH)) {
+    lines.push(`${bold ? BOLD : ''}${wrapped}`)
+  }
+  lines.push(`${bold ? BOLD : ''}${alignRight(right)}`)
+  return lines
+}
+
+function variantLabel(variant: OrderItemVariant): string {
+  return variant.value && variant.value !== variant.name ? variant.value : variant.name
 }
 
 function formatItemBlock(item: OrderItem): string[] {
   const lines: string[] = []
+  const qty = item.quantity
   const num = item.itemNumber ? `#${item.itemNumber} ` : ''
-  const desc = `${item.quantity}x ${num}${item.name}`
-  const price = formatAmount(itemLineTotal(item))
+  const extras = itemModifiers(item) ?? []
+  const extrasUnitTotal = roundMoney(extras.reduce((sum, mod) => sum + mod.price, 0))
+  const pricedVariants = (item.variants ?? []).filter((v) => (v.price ?? 0) > 0)
+  const unpricedVariants = (item.variants ?? []).filter((v) => (v.price ?? 0) <= 0)
+  const variantUnitTotal = roundMoney(pricedVariants.reduce((sum, v) => sum + (v.price ?? 0), 0))
+  const baseUnit = roundMoney(Math.max(0, item.price - extrasUnitTotal - variantUnitTotal))
 
-  if (desc.length + price.length + 1 <= WIDTH) {
-    lines.push(`${BOLD}${padLine(desc, price)}`)
+  const mainDesc = `${qty}x ${num}${item.name}`
+
+  if (baseUnit > 0.009) {
+    lines.push(...formatPricedLine(mainDesc, baseUnit * qty, true))
   } else {
-    for (const wrapped of wrapText(desc, WIDTH)) {
+    for (const wrapped of wrapText(mainDesc, WIDTH)) {
       lines.push(`${BOLD}${wrapped}`)
     }
-    lines.push(`${BOLD}${alignRight(price)}`)
   }
 
-  for (const variant of item.variants ?? []) {
-    const label = variant.value && variant.value !== variant.name ? variant.value : variant.name
+  for (const variant of pricedVariants) {
+    const label = variantLabel(variant)
+    if (label) {
+      lines.push(...formatPricedLine(`   + ${label}`, (variant.price ?? 0) * qty))
+    }
+  }
+
+  for (const variant of unpricedVariants) {
+    const label = variantLabel(variant)
     if (label) lines.push(`   * ${label}`)
   }
 
-  for (const mod of itemModifiers(item) ?? []) {
-    lines.push(`   * ${mod.name}`)
+  for (const mod of extras) {
+    lines.push(...formatPricedLine(`   + ${mod.name}`, mod.price * qty))
   }
 
   if (item.notes) {

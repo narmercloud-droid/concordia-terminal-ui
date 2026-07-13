@@ -73,8 +73,9 @@ final class ReceiptBitmapRenderer {
         canvas.drawColor(Color.WHITE);
         TextPaint paint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
         paint.setColor(Color.BLACK);
+        applyThermalTextStyle(paint, false);
         drawRows(canvas, paint, rows, PADDING_TOP);
-        return out;
+        return hardMonochrome(out);
     }
 
     static Bitmap render(String body, String qrUrl, String footerText) {
@@ -106,8 +107,9 @@ final class ReceiptBitmapRenderer {
         canvas.drawColor(Color.WHITE);
 
         float y = PADDING_TOP;
-        TextPaint paint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+        TextPaint paint = new TextPaint();
         paint.setColor(Color.BLACK);
+        applyThermalTextStyle(paint, false);
 
         y = drawRows(canvas, paint, bodyRows, y);
 
@@ -119,15 +121,40 @@ final class ReceiptBitmapRenderer {
         }
 
         drawRows(canvas, paint, footerRows, y);
+        return hardMonochrome(out);
+    }
+
+    /** Crush anti-aliased grays to solid black for darker thermal output. */
+    private static Bitmap hardMonochrome(Bitmap source) {
+        int width = source.getWidth();
+        int height = source.getHeight();
+        Bitmap out = source.copy(Bitmap.Config.ARGB_8888, true);
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int pixel = out.getPixel(x, y);
+                int r = Color.red(pixel);
+                int g = Color.green(pixel);
+                int b = Color.blue(pixel);
+                int lum = (r * 299 + g * 587 + b * 114) / 1000;
+                out.setPixel(x, y, lum < 210 ? Color.BLACK : Color.WHITE);
+            }
+        }
         return out;
+    }
+
+    private static void applyThermalTextStyle(TextPaint paint, boolean bold) {
+        paint.setAntiAlias(false);
+        paint.setSubpixelText(false);
+        paint.setFakeBoldText(bold);
+        paint.setTypeface(bold ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
     }
 
     private static float measureRowsHeight(List<Row> rows) {
         float total = 0;
-        TextPaint measurePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+        TextPaint measurePaint = new TextPaint();
         for (Row row : rows) {
             total += row.gapBefore;
-            measurePaint.setTypeface(row.bold ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+            applyThermalTextStyle(measurePaint, row.bold);
             measurePaint.setTextSize(row.size);
             total += measureTextHeight(measurePaint, row.text, PAPER_WIDTH - PADDING_X * 2, row.center) + GAP_LINE;
         }
@@ -137,9 +164,9 @@ final class ReceiptBitmapRenderer {
     private static float drawRows(Canvas canvas, TextPaint paint, List<Row> rows, float y) {
         for (Row row : rows) {
             y += row.gapBefore;
-            paint.setTypeface(row.bold ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+            applyThermalTextStyle(paint, row.bold);
             paint.setTextSize(row.size);
-            y += drawTextBlock(canvas, paint, row.text, row.center, y) + GAP_LINE;
+            y += drawTextBlock(canvas, paint, row.text, row.center, row.bold, y) + GAP_LINE;
         }
         return y;
     }
@@ -202,7 +229,10 @@ final class ReceiptBitmapRenderer {
                 break;
             }
 
-            if (line.startsWith("   *") || line.startsWith("* ") || line.startsWith("   \u00bb")) {
+            if (line.startsWith("   +")) {
+                size = 26f;
+                bold = true;
+            } else if (line.startsWith("   *") || line.startsWith("* ") || line.startsWith("   \u00bb")) {
                 size = 26f;
             } else if (line.matches("-{8,}.*")) {
                 size = 24f;
@@ -222,14 +252,18 @@ final class ReceiptBitmapRenderer {
         return layout.getHeight();
     }
 
-    private static float drawTextBlock(Canvas canvas, TextPaint paint, String text, boolean center, float y) {
+    private static float drawTextBlock(Canvas canvas, TextPaint paint, String text, boolean center, boolean bold, float y) {
         int maxWidth = PAPER_WIDTH - PADDING_X * 2;
         Layout.Alignment align = center ? Layout.Alignment.ALIGN_CENTER : Layout.Alignment.ALIGN_NORMAL;
         StaticLayout layout = buildLayout(paint, text, maxWidth, align);
         canvas.save();
-        float x = center ? PADDING_X : PADDING_X;
+        float x = PADDING_X;
         canvas.translate(x, y);
         layout.draw(canvas);
+        if (bold) {
+            canvas.translate(1f, 0f);
+            layout.draw(canvas);
+        }
         canvas.restore();
         return layout.getHeight();
     }
