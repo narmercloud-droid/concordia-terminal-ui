@@ -60,6 +60,44 @@ function padLine(left: string, right: string): string {
   return gap > 0 ? `${l}${' '.repeat(gap)}${right}` : `${l} ${right}`
 }
 
+function alignRight(text: string): string {
+  const pad = Math.max(0, WIDTH - text.length)
+  return `${' '.repeat(pad)}${text}`
+}
+
+/** Word-wrap for 58mm text fallback when name + price do not fit on one line. */
+function wrapText(text: string, width: number): string[] {
+  if (text.length <= width) return [text]
+
+  const words = text.split(/\s+/).filter(Boolean)
+  const lines: string[] = []
+  let current = ''
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word
+    if (next.length <= width) {
+      current = next
+      continue
+    }
+
+    if (current) lines.push(current)
+
+    if (word.length > width) {
+      let rest = word
+      while (rest.length > width) {
+        lines.push(rest.slice(0, width))
+        rest = rest.slice(width)
+      }
+      current = rest
+    } else {
+      current = word
+    }
+  }
+
+  if (current) lines.push(current)
+  return lines.length ? lines : [text]
+}
+
 function isPickup(type?: string): boolean {
   const t = (type ?? '').toLowerCase()
   return t.includes('pickup') || t.includes('abhol')
@@ -150,7 +188,9 @@ function splitCustomerNotes(notes?: string): string | undefined {
 function extractFreeDrinkLabel(order: OrderDetails): string | null {
   if (order.freeDrinkChoice?.trim()) return order.freeDrinkChoice.trim()
   const notes = order.notes ?? ''
-  const match = notes.match(/\[GRATISGETRÄNK\]\s*(.+)/i)
+  const match =
+    notes.match(/\[GRATISGETRÄNK\]\s*(.+)/i) ??
+    notes.match(/\[GRATISGETRAENK\]\s*(.+)/i)
   return match?.[1]?.trim() ?? null
 }
 
@@ -179,9 +219,17 @@ function itemLineTotal(item: OrderItem): number {
 function formatItemBlock(item: OrderItem): string[] {
   const lines: string[] = []
   const num = item.itemNumber ? `#${item.itemNumber} ` : ''
-  lines.push(
-    `${BOLD}${padLine(`${item.quantity}x ${num}${item.name}`, formatAmount(itemLineTotal(item)))}`,
-  )
+  const desc = `${item.quantity}x ${num}${item.name}`
+  const price = formatAmount(itemLineTotal(item))
+
+  if (desc.length + price.length + 1 <= WIDTH) {
+    lines.push(`${BOLD}${padLine(desc, price)}`)
+  } else {
+    for (const wrapped of wrapText(desc, WIDTH)) {
+      lines.push(`${BOLD}${wrapped}`)
+    }
+    lines.push(`${BOLD}${alignRight(price)}`)
+  }
 
   for (const variant of item.variants ?? []) {
     const label = variant.value && variant.value !== variant.name ? variant.value : variant.name
@@ -197,6 +245,17 @@ function formatItemBlock(item: OrderItem): string[] {
   }
 
   return lines
+}
+
+function appendFreeDrinkBlock(lines: string[], freeDrink: string, pickup: boolean): void {
+  lines.push(RULE)
+  lines.push(boldCenter('GRATISGETRÄNK'))
+  if (pickup) {
+    lines.push(`${BOLD}→ ${freeDrink}`)
+  } else {
+    lines.push(boldCenter('Fahrer: mitnehmen'))
+    lines.push(`${BOLD}→ ${freeDrink}`)
+  }
 }
 
 /** Production customer site — used for driver QR fallback when API omits courierUrl. */
@@ -240,11 +299,17 @@ export function buildOrderReceipt(
   const placed = berlinParts(order.createdAt)
   const accepted = berlinParts(order.confirmedAt ?? new Date().toISOString())
   const scheduled = isScheduledOrder(order)
+  const firstOrder = isFirstCustomerOrder(order)
+  const freeDrink = extractFreeDrinkLabel(order)
 
   const lines: string[] = [
     centerLarge(branch),
     centerLarge(pickup ? 'ABHOLUNG' : 'LIEFERUNG'),
   ]
+
+  if (firstOrder) {
+    lines.push(boldCenter('(Neuer Kunde)'))
+  }
 
   if (scheduled) {
     lines.push(boldCenter('GEPLANTE BESTELLUNG'))
@@ -259,11 +324,8 @@ export function buildOrderReceipt(
     lines.push(...formatItemBlock(item))
   }
 
-  const freeDrink = extractFreeDrinkLabel(order)
   if (freeDrink) {
-    lines.push(RULE)
-    lines.push(boldCenter('GRATISGETRÄNK'))
-    lines.push(`${BOLD}→ ${freeDrink}`)
+    appendFreeDrinkBlock(lines, freeDrink, pickup)
   }
 
   lines.push(RULE)
@@ -286,13 +348,6 @@ export function buildOrderReceipt(
   lines.push(`${BOLD}${padLine('Gesamtbetrag', formatAmount(total))}`)
   lines.push(RULE)
   lines.push(paymentStatusLine(order, pickup, paid))
-
-  if (isFirstCustomerOrder(order)) {
-    lines.push(RULE)
-    lines.push(boldCenter('★ ERSTE BESTELLUNG ★'))
-    lines.push(center('Willkommen! Vielen Dank für'))
-    lines.push(center('Ihre erste Bestellung bei uns!'))
-  }
 
   lines.push(RULE)
   lines.push(`${BOLD}Kunde: ${formatCustomerName(order.customerName)}`)
