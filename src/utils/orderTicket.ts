@@ -11,6 +11,8 @@ const LARGE = '@@LARGE@@'
 const CENTER = '@@CENTER@@'
 const BOLD = '@@BOLD@@'
 const BOLD_CENTER = '@@BOLD_CENTER@@'
+/** Slightly heavier main item lines — lighter than @@BOLD@@ headers. */
+const ITEM = '@@ITEM@@'
 
 const RULE = '-'.repeat(WIDTH)
 
@@ -218,16 +220,17 @@ function itemLineTotal(item: OrderItem): number {
   return item.quantity * item.price
 }
 
-function formatPricedLine(left: string, amount: number, bold = false): string[] {
+function formatPricedLine(left: string, amount: number, style: 'normal' | 'bold' | 'item' = 'normal'): string[] {
+  const mark = style === 'bold' ? BOLD : style === 'item' ? ITEM : ''
   const right = formatAmount(amount)
   if (left.length + right.length + 1 <= WIDTH) {
-    return [`${bold ? BOLD : ''}${padLine(left, right)}`]
+    return [`${mark}${padLine(left, right)}`]
   }
   const lines: string[] = []
   for (const wrapped of wrapText(left, WIDTH)) {
-    lines.push(`${bold ? BOLD : ''}${wrapped}`)
+    lines.push(`${mark}${wrapped}`)
   }
-  lines.push(`${bold ? BOLD : ''}${alignRight(right)}`)
+  lines.push(`${mark}${alignRight(right)}`)
   return lines
 }
 
@@ -249,10 +252,10 @@ function formatItemBlock(item: OrderItem): string[] {
   const mainDesc = `${qty}x ${num}${item.name}`
 
   if (baseUnit > 0.009) {
-    lines.push(...formatPricedLine(mainDesc, baseUnit * qty, false))
+    lines.push(...formatPricedLine(mainDesc, baseUnit * qty, 'item'))
   } else {
     for (const wrapped of wrapText(mainDesc, WIDTH)) {
-      lines.push(wrapped)
+      lines.push(`${ITEM}${wrapped}`)
     }
   }
 

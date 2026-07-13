@@ -422,6 +422,7 @@ public class SunmiPrintPlugin extends Plugin {
             .replace("@@XL@@", "")
             .replace("@@LARGE@@", "")
             .replace("@@CENTER@@", "")
-            .replace("@@BOLD@@", "");
+            .replace("@@BOLD@@", "")
+            .replace("@@ITEM@@", "");
     }
 }

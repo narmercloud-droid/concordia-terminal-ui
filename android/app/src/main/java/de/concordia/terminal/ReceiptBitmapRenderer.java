@@ -33,19 +33,22 @@ final class ReceiptBitmapRenderer {
     private static final String MARK_LARGE = "@@LARGE@@";
     private static final String MARK_CENTER = "@@CENTER@@";
     private static final String MARK_BOLD = "@@BOLD@@";
+    private static final String MARK_ITEM = "@@ITEM@@";
 
     private static class Row {
         final String text;
         final float size;
         final boolean center;
         final boolean bold;
+        final boolean itemBold;
         final int gapBefore;
 
-        Row(String text, float size, boolean center, boolean bold, int gapBefore) {
+        Row(String text, float size, boolean center, boolean bold, boolean itemBold, int gapBefore) {
             this.text = text;
             this.size = size;
             this.center = center;
             this.bold = bold;
+            this.itemBold = itemBold;
             this.gapBefore = gapBefore;
         }
     }
@@ -122,11 +125,16 @@ final class ReceiptBitmapRenderer {
         return out;
     }
 
-    private static void applyTextStyle(TextPaint paint, boolean bold) {
+    private static void applyTextStyle(TextPaint paint, boolean bold, boolean itemBold) {
         paint.setAntiAlias(true);
         paint.setSubpixelText(false);
-        paint.setFakeBoldText(false);
-        paint.setTypeface(bold ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+        if (itemBold) {
+            paint.setFakeBoldText(true);
+            paint.setTypeface(Typeface.DEFAULT);
+        } else {
+            paint.setFakeBoldText(false);
+            paint.setTypeface(bold ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+        }
     }
 
     private static float measureRowsHeight(List<Row> rows) {
@@ -134,7 +142,7 @@ final class ReceiptBitmapRenderer {
         TextPaint measurePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
         for (Row row : rows) {
             total += row.gapBefore;
-            applyTextStyle(measurePaint, row.bold);
+            applyTextStyle(measurePaint, row.bold, row.itemBold);
             measurePaint.setTextSize(row.size);
             total += measureTextHeight(measurePaint, row.text, PAPER_WIDTH - PADDING_X * 2, row.center) + GAP_LINE;
         }
@@ -144,7 +152,7 @@ final class ReceiptBitmapRenderer {
     private static float drawRows(Canvas canvas, TextPaint paint, List<Row> rows, float y) {
         for (Row row : rows) {
             y += row.gapBefore;
-            applyTextStyle(paint, row.bold);
+            applyTextStyle(paint, row.bold, row.itemBold);
             paint.setTextSize(row.size);
             y += drawTextBlock(canvas, paint, row.text, row.center, y) + GAP_LINE;
         }
@@ -165,6 +173,7 @@ final class ReceiptBitmapRenderer {
             float size = 28f;
             boolean center = false;
             boolean bold = false;
+            boolean itemBold = false;
             boolean tight = false;
             String line = raw;
 
@@ -200,6 +209,12 @@ final class ReceiptBitmapRenderer {
                     bold = true;
                     continue;
                 }
+                if (line.startsWith(MARK_ITEM)) {
+                    line = line.substring(MARK_ITEM.length());
+                    size = 27f;
+                    itemBold = true;
+                    break;
+                }
                 if (line.startsWith(MARK_BOLD)) {
                     line = line.substring(MARK_BOLD.length());
                     size = 27f;
@@ -218,7 +233,7 @@ final class ReceiptBitmapRenderer {
             }
 
             int gap = (lastWasBlank && !tight) ? GAP_SECTION : 0;
-            rows.add(new Row(line, size, center, bold, gap));
+            rows.add(new Row(line, size, center, bold, itemBold, gap));
             lastWasBlank = false;
         }
         return rows;
