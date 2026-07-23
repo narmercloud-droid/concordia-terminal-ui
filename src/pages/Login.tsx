@@ -71,6 +71,8 @@ const Login = () => {
         branch_id: payload.branchId,
         branch_name: payload.branchName,
         terminal_code: payload.terminalCode,
+        terminal_id: payload.terminalId,
+        activation_token: payload.activationToken,
         isAuthenticated: true,
       })
     } catch (err) {

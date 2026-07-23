@@ -1,4 +1,5 @@
 import { io, Socket } from 'socket.io-client'
+import { useTerminalStore } from '../store/terminalStore.js'
 
 let socket: Socket | null = null
 let joinedBranchId = ''
@@ -12,6 +13,8 @@ export const createSocket = (apiUrl: string, branchId: string): Socket => {
     socket = null
   }
 
+  const { activation_token, terminal_id } = useTerminalStore.getState()
+
   joinedBranchId = branchId
   socket = io(apiUrl, {
     transports: ['websocket', 'polling'],
@@ -21,10 +24,15 @@ export const createSocket = (apiUrl: string, branchId: string): Socket => {
     reconnectionAttempts: Infinity,
     reconnectionDelay: 2000,
     reconnectionDelayMax: 15000,
+    auth: {
+      terminal_token: activation_token,
+      terminal_id,
+    },
   })
 
   socket.on('connect', () => {
-    socket?.emit('join_terminal_branch', branchId)
+    const token = useTerminalStore.getState().activation_token
+    socket?.emit('join_terminal_branch', { branchId, token })
   })
 
   return socket

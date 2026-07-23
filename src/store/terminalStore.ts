@@ -17,6 +17,8 @@ const emptySession = (): TerminalSession => ({
   branch_id: '',
   branch_name: '',
   terminal_code: '',
+  terminal_id: '',
+  activation_token: '',
   isAuthenticated: false,
 })
 
@@ -24,11 +26,15 @@ function normalizeSession(raw: Record<string, unknown>): TerminalSession {
   const branch_id = String(raw.branch_id ?? raw.branchId ?? '').trim()
   const branch_name = String(raw.branch_name ?? raw.branchName ?? '').trim()
   const terminal_code = String(raw.terminal_code ?? raw.terminalCode ?? '').trim()
+  const terminal_id = String(raw.terminal_id ?? raw.terminalId ?? '').trim()
+  const activation_token = String(raw.activation_token ?? raw.activationToken ?? '').trim()
   return {
     branch_id,
     branch_name,
     terminal_code,
-    isAuthenticated: Boolean(branch_id && terminal_code),
+    terminal_id,
+    activation_token,
+    isAuthenticated: Boolean(branch_id && terminal_code && activation_token),
   }
 }
 
@@ -39,7 +45,13 @@ const getInitialSession = (): TerminalSession => {
   if (!stored) return emptySession()
 
   try {
-    return normalizeSession(JSON.parse(stored) as Record<string, unknown>)
+    const session = normalizeSession(JSON.parse(stored) as Record<string, unknown>)
+    // Force re-activate if older sessions lack tokens
+    if (!session.activation_token) {
+      window.localStorage.removeItem(STORAGE_KEY)
+      return emptySession()
+    }
+    return session
   } catch {
     window.localStorage.removeItem(STORAGE_KEY)
     return emptySession()
@@ -54,7 +66,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       ...session,
       isAuthenticated: true,
     })
-    if (!nextSession.branch_id || !nextSession.terminal_code) {
+    if (!nextSession.branch_id || !nextSession.terminal_code || !nextSession.activation_token) {
       throw new Error('Invalid terminal session from server')
     }
     nextSession.isAuthenticated = true
