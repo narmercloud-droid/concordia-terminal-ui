@@ -8,4 +8,8 @@
     <string name="fg_notification_channel_desc">Keeps Concordia Terminal connected for incoming orders</string>
     <string name="fg_notification_title">Concordia Terminal</string>
     <string name="fg_notification_text">Waiting for orders — %1$s</string>
+    <string name="order_alert_channel">New order alarm</string>
+    <string name="order_alert_channel_desc">Opens the terminal immediately when a new order arrives</string>
+    <string name="order_alert_title">New order</string>
+    <string name="order_alert_text_default">A new order has arrived</string>
 </resources>

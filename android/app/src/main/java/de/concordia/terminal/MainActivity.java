@@ -1,13 +1,12 @@
 package de.concordia.terminal;
 
-import android.app.ActivityManager;
-import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.WebSettings;
@@ -15,10 +14,11 @@ import android.webkit.WebView;
 
 import com.getcapacitor.BridgeActivity;
 
+/**
+ * Kitchen terminal UI. No lock-task / pinning — behaves like a normal app.
+ * Order alerts come via notification while a foreground keep-alive service runs.
+ */
 public class MainActivity extends BridgeActivity {
-    private static final long RETURN_DELAY_MS = 3000L;
-    private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private Runnable bringToFrontRunnable;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -27,22 +27,28 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AlertSoundPlugin.class);
         registerPlugin(TerminalKeepAlivePlugin.class);
         super.onCreate(savedInstanceState);
+        // Ensure any previous lock-task / pin session from older builds is cleared.
+        try {
+            stopLockTask();
+        } catch (Exception ignored) {
+            // ignore
+        }
+        applyWakeAndShowFlags();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         enableImmersiveMode();
         tuneWebView();
+
+        if (OrderForegroundService.isSessionActive(this)) {
+            String branchId = OrderForegroundService.getSavedBranchId(this);
+            String branchName = OrderForegroundService.getSavedBranchName(this);
+            OrderForegroundService.start(this, branchId, branchName);
+        }
     }
 
     @Override
     public void onResume() {
         super.onResume();
-        cancelBringToFront();
         enableImmersiveMode();
-    }
-
-    @Override
-    public void onUserLeaveHint() {
-        super.onUserLeaveHint();
-        scheduleBringToFront();
     }
 
     @Override
@@ -57,27 +63,26 @@ public class MainActivity extends BridgeActivity {
         super.onBackPressed();
     }
 
-    private void scheduleBringToFront() {
-        cancelBringToFront();
-        bringToFrontRunnable = () -> {
-            try {
-                ActivityManager activityManager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-                if (activityManager != null) {
-                    activityManager.moveTaskToFront(getTaskId(), ActivityManager.MOVE_TASK_WITH_HOME);
-                }
-            } catch (Exception ignored) {
-                Intent intent = new Intent(this, MainActivity.class);
-                intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                startActivity(intent);
-            }
-        };
-        mainHandler.postDelayed(bringToFrontRunnable, RETURN_DELAY_MS);
+    void requestIgnoreBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;
+        try {
+            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+            if (pm == null) return;
+            String packageName = getPackageName();
+            if (pm.isIgnoringBatteryOptimizations(packageName)) return;
+            Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+            intent.setData(Uri.parse("package:" + packageName));
+            startActivity(intent);
+        } catch (Exception ignored) {
+            // Some OEMs block this intent.
+        }
     }
 
-    private void cancelBringToFront() {
-        if (bringToFrontRunnable != null) {
-            mainHandler.removeCallbacks(bringToFrontRunnable);
-            bringToFrontRunnable = null;
+    private void applyWakeAndShowFlags() {
+        // Allow order-alert taps to wake / show over lock screen (WhatsApp-style).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true);
+            setTurnScreenOn(true);
         }
     }
 

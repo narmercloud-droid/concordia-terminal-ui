@@ -1,7 +1,7 @@
 import { http } from './http.js'
 
-/** Render spins down after ~15 min idle; ping every minute while the terminal is logged in. */
-const WARMUP_MS = 60 * 1000
+/** Render spins down after ~15 min idle; ping every 3 min while logged in (lighter on the tablet). */
+const WARMUP_MS = 3 * 60 * 1000
 
 let timer: number | null = null
 

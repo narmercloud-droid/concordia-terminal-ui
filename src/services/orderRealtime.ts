@@ -6,7 +6,7 @@ import { useTerminalStore } from '../store/terminalStore.js'
 import { mapApiOrder } from '../utils/orderMap.js'
 import { isKitchenVisibleOrder } from '../utils/orderPayment.js'
 import { isBerlinToday } from '../utils/berlinToday.js'
-import { bringAppToFront, startKeepAlive, stopKeepAlive } from '../native/terminalKeepAlive.js'
+import { alertNewOrder, startKeepAlive, stopKeepAlive } from '../native/terminalKeepAlive.js'
 import { warmPrinter } from '../native/printerWarmup.js'
 import { primeSunmiDetection } from '../native/printerPlatform.js'
 import { startBackendWarmup, stopBackendWarmup } from '../api/warmup.js'
@@ -103,7 +103,8 @@ export function startOrderRealtime() {
     }
     void warmPrinter()
     if (!useTerminalStore.getState().ordersPaused) {
-      void bringAppToFront()
+      const shortId = String(order.order_id || '').replace(/-/g, '').slice(-8).toUpperCase()
+      void alertNewOrder(shortId ? `Order #${shortId}` : 'New order')
     }
   }
   const onConfirmed = (payload: unknown) => {

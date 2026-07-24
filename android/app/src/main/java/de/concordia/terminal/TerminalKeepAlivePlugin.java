@@ -4,12 +4,12 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.content.Context;
-import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 
 import androidx.core.content.ContextCompat;
 
+import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -70,6 +70,13 @@ public class TerminalKeepAlivePlugin extends Plugin {
     private void startKeepAliveInternal(String branchId, String branchName) {
         OrderForegroundService.saveSession(getContext(), branchId, branchName);
         OrderForegroundService.start(getContext(), branchId, branchName);
+
+        Activity activity = getActivity();
+        if (activity instanceof MainActivity) {
+            ((MainActivity) activity).runOnUiThread(
+                ((MainActivity) activity)::requestIgnoreBatteryOptimizations
+            );
+        }
     }
 
     @PluginMethod
@@ -85,24 +92,35 @@ public class TerminalKeepAlivePlugin extends Plugin {
         try {
             Activity activity = getActivity();
             if (activity != null) {
-                ActivityManager activityManager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+                ActivityManager activityManager =
+                    (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
                 if (activityManager != null) {
-                    activityManager.moveTaskToFront(activity.getTaskId(), ActivityManager.MOVE_TASK_WITH_HOME);
+                    activityManager.moveTaskToFront(
+                        activity.getTaskId(),
+                        ActivityManager.MOVE_TASK_WITH_HOME
+                    );
                 }
             } else {
-                Intent intent = new Intent(context, MainActivity.class);
-                intent.addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK
-                        | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                        | Intent.FLAG_ACTIVITY_SINGLE_TOP
-                );
-                context.startActivity(intent);
+                OrderForegroundService.launchMainActivity(context);
             }
         } catch (Exception ignored) {
-            Intent intent = new Intent(context, MainActivity.class);
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            context.startActivity(intent);
+            OrderForegroundService.launchMainActivity(context);
         }
         call.resolve();
+    }
+
+    /** Heads-up notification only — does not force the app open (WhatsApp-style). */
+    @PluginMethod
+    public void alertNewOrder(PluginCall call) {
+        String summary = call.getString("summary", "");
+        OrderForegroundService.alertNewOrder(getContext(), summary);
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void isSessionActive(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("active", OrderForegroundService.isSessionActive(getContext()));
+        call.resolve(result);
     }
 }

@@ -4,6 +4,8 @@ interface TerminalKeepAlivePlugin {
   startKeepAlive(options: { branchId: string; branchName: string }): Promise<void>
   stopKeepAlive(): Promise<void>
   bringToFront(): Promise<void>
+  alertNewOrder(options?: { summary?: string }): Promise<void>
+  isSessionActive(): Promise<{ active: boolean }>
 }
 
 const TerminalKeepAlive = registerPlugin<TerminalKeepAlivePlugin>('TerminalKeepAlive')
@@ -32,5 +34,18 @@ export async function bringAppToFront(): Promise<void> {
     await TerminalKeepAlive.bringToFront()
   } catch {
     // ignore
+  }
+}
+
+export async function alertNewOrder(summary?: string): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return
+  try {
+    await TerminalKeepAlive.alertNewOrder({ summary: summary ?? '' })
+  } catch {
+    try {
+      await TerminalKeepAlive.bringToFront()
+    } catch {
+      // ignore
+    }
   }
 }
