@@ -26,6 +26,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NetworkPrintPlugin.class);
         registerPlugin(AlertSoundPlugin.class);
         registerPlugin(TerminalKeepAlivePlugin.class);
+        registerPlugin(AppUpdatePlugin.class);
         super.onCreate(savedInstanceState);
         // Ensure any previous lock-task / pin session from older builds is cleared.
         try {

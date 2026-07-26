@@ -122,4 +122,13 @@ export const ar: Record<TranslationKey, string> = {
   printerTesting: 'جاري الطباعة…',
   printerTestOk: 'تم إرسال الطباعة التجريبية.',
   printerTestFail: 'فشلت الطباعة التجريبية',
+  updateAvailable: 'يتوفر إصدار جديد للطرفية {version}.',
+  updateNow: 'تحديث الآن',
+  updateDownloading: 'جاري تنزيل التحديث… {percent}%',
+  updateInstalling: 'التحديث جاهز — أكّد التثبيت.',
+  updateNeedsPermission: 'يرجى السماح بتثبيت التطبيقات من مصادر غير معروفة لـ Concordia Terminal.',
+  updateAllowInstall: 'فتح الإذن',
+  updateFailed: 'فشل التحديث',
+  updateRetry: 'إعادة المحاولة',
+  checkForUpdate: 'البحث عن تحديث',
 }

@@ -109,7 +109,9 @@ The device stays connected and receives new orders in real time.
 ## Rebuild after code changes
 
 ```powershell
-npm run apk:sunmi
+npm run apk:publish
 ```
 
-Reinstall `android/app/build/outputs/apk/release/app-release.apk` on the terminal.
+Then upload the APK to [concordia-updates releases](https://github.com/narmercloud-droid/concordia-updates/releases) as `app-production-release.apk` and push `latest.json`.
+
+Terminals on **v1.6.34+** auto-download over Wi‑Fi (staff taps Install once). Older builds still need a one-time manual APK install.

@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { useI18n, type Language } from '../i18n/index.js'
 import { getApiErrorMessage } from '../lib/apiErrors.js'
+import { checkAndApplyAppUpdate } from '../services/appUpdateService.js'
 import '../App.css'
 
 interface SideMenuProps {
@@ -86,6 +87,17 @@ export function SideMenu({ open, onClose }: SideMenuProps) {
         <NavLink to="/terminal-settings" className="side-menu-link" onClick={onClose}>
           {t('terminalSettings')}
         </NavLink>
+
+        <button
+          type="button"
+          className="button secondary side-menu-btn"
+          onClick={() => {
+            void checkAndApplyAppUpdate({ force: true, autoApply: true })
+            onClose()
+          }}
+        >
+          {t('checkForUpdate')}
+        </button>
 
         <section className="side-menu-section">
           <h3>{t('language')}</h3>

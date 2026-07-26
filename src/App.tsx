@@ -10,7 +10,9 @@ import { ProtectedRoute } from './components/ProtectedRoute.js'
 import { useTerminalStore } from './store/terminalStore.js'
 import { useHardwareBack } from './hooks/useHardwareBack.js'
 import { IncomingOrderOverlay } from './components/IncomingOrderOverlay.js'
+import { AppUpdateBanner } from './components/AppUpdateBanner.js'
 import { startOrderRealtime, stopOrderRealtime } from './services/orderRealtime.js'
+import { checkAndApplyAppUpdate } from './services/appUpdateService.js'
 import './App.css'
 
 function App() {
@@ -18,6 +20,14 @@ function App() {
   const branch_id = useTerminalStore((state) => state.branch_id)
   const loadBranchStatus = useTerminalStore((state) => state.loadBranchStatus)
   useHardwareBack('/orders')
+
+  useEffect(() => {
+    void checkAndApplyAppUpdate({ autoApply: true })
+    const timer = window.setInterval(() => {
+      void checkAndApplyAppUpdate({ autoApply: true })
+    }, 60 * 60 * 1000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     if (isAuthenticated && branch_id) {
@@ -38,6 +48,7 @@ function App() {
   return (
     <div className="app-shell">
       {isAuthenticated && <Header />}
+      <AppUpdateBanner />
       {isAuthenticated && <IncomingOrderOverlay />}
       <main className="main-content">
         <Routes>

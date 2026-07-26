@@ -120,6 +120,15 @@ export const de = {
   printerTesting: 'Drucke…',
   printerTestOk: 'Testdruck gesendet.',
   printerTestFail: 'Testdruck fehlgeschlagen',
+  updateAvailable: 'Neue Terminal-Version {version} ist verfügbar.',
+  updateNow: 'Jetzt aktualisieren',
+  updateDownloading: 'Update wird geladen… {percent}%',
+  updateInstalling: 'Update bereit — bitte Installation bestätigen.',
+  updateNeedsPermission: 'Bitte „Apps aus unbekannten Quellen“ für Concordia Terminal erlauben.',
+  updateAllowInstall: 'Berechtigung öffnen',
+  updateFailed: 'Update fehlgeschlagen',
+  updateRetry: 'Erneut versuchen',
+  checkForUpdate: 'Nach Update suchen',
 } as const
 
 export type TranslationKey = keyof typeof de
