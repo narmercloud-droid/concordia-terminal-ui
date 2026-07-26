@@ -13,6 +13,7 @@ import { getStageActions } from '../utils/orderStages.js'
 import type { StageAction } from '../utils/orderStages.js'
 import { getApiErrorMessage } from '../lib/apiErrors.js'
 import { isScheduledOrder } from '../utils/orderCountdown.js'
+import { isPaymentIssueOrder } from '../utils/orderPayment.js'
 import { useI18n } from '../i18n/index.js'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { useOrderStatusUpdate } from '../hooks/useOrderStatusUpdate.js'
@@ -79,15 +80,17 @@ const OrderDetails = () => {
   }, [order_id, t])
 
   const isPending = order?.status === 'pending' || order?.status === 'new'
+  const paymentIssue = order ? isPaymentIssueOrder(order) : false
+  const canKitchenAct = Boolean(isPending && !paymentIssue)
   const prepPresets = useMemo(() => {
     if (!order) return PREP_PRESETS_DELIVERY
     return prepPresetsFor(order)
   }, [order])
 
-  const stageActions = order ? getStageActions(order) : []
+  const stageActions = order && !paymentIssue ? getStageActions(order) : []
 
   const handleConfirm = async () => {
-    if (!order_id || !order || !isPending || confirming) return
+    if (!order_id || !order || !canKitchenAct || confirming) return
     setError('')
     const result = await confirmAndPrint(order_id, prepMinutes)
     setOrder({ ...order, status: 'accepted', estimatedPrepMinutes: prepMinutes })
@@ -100,7 +103,7 @@ const OrderDetails = () => {
   }
 
   const handleReject = async (reason: string) => {
-    if (!order_id || !isPending) return
+    if (!order_id || !canKitchenAct) return
     setRejecting(true)
     setError('')
     try {
@@ -174,6 +177,12 @@ const OrderDetails = () => {
           <>
             {toastMessage && <Toast visible message={toastMessage} onClose={() => setToastMessage('')} />}
 
+            {paymentIssue ? (
+              <div className="failed-tab-hint" role="status">
+                {t('paymentFailedDetailHint')}
+              </div>
+            ) : null}
+
             <div className="detail-countdown-row">
               <CountdownBadge order={order} />
             </div>
@@ -185,12 +194,22 @@ const OrderDetails = () => {
               </div>
               <div className="detail-row">
                 <span>{t('status')}</span>
-                <strong>{t(getStatusLabelKey(order.status))}</strong>
+                <strong>
+                  {paymentIssue ? t('paymentFailedBadge') : t(getStatusLabelKey(order.status))}
+                </strong>
               </div>
               <div className="detail-row">
                 <span>{t('guest')}</span>
                 <strong>{order.customerName ?? t('guest')}</strong>
               </div>
+              {order.customerPhone ? (
+                <div className="detail-row">
+                  <span>{t('phone')}</span>
+                  <strong>
+                    <a href={`tel:${order.customerPhone}`}>{order.customerPhone}</a>
+                  </strong>
+                </div>
+              ) : null}
               <div className="detail-row">
                 <span>{t('delivery')}</span>
                 <strong>{fulfillmentLabel(order.delivery_type)}</strong>
@@ -243,7 +262,7 @@ const OrderDetails = () => {
               </div>
             </section>
 
-            {isPending ? (
+            {canKitchenAct ? (
               <section className="detail-section">
                 {isScheduledOrder(order) ? (
                   <>
@@ -278,7 +297,7 @@ const OrderDetails = () => {
               </section>
             ) : null}
 
-            {!isPending && stageActions.length > 0 ? (
+            {!canKitchenAct && !paymentIssue && stageActions.length > 0 ? (
               <section className="detail-section stage-actions">
                 {stageActions.map((action) => (
                   <button
@@ -298,12 +317,12 @@ const OrderDetails = () => {
               <button className="button secondary" type="button" onClick={() => navigate('/orders')}>
                 {t('back')}
               </button>
-              {!isPending ? (
+              {!isPending && !paymentIssue ? (
                 <button className="button tertiary" type="button" onClick={handleReprint}>
                   {t('reprint')}
                 </button>
               ) : null}
-              {isPending ? (
+              {canKitchenAct ? (
                 <>
                   <button
                     className="button danger"

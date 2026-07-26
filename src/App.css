@@ -265,6 +265,44 @@
   box-shadow: 0 0 0 2px rgba(255, 128, 0, 0.15);
 }
 
+.order-card--payment-failed {
+  border-color: #dc2626;
+  background: linear-gradient(0deg, rgba(220, 38, 38, 0.12), rgba(220, 38, 38, 0.12)), #fff;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+}
+
+.order-badge--payment-failed {
+  background: #dc2626;
+  color: #fff;
+}
+
+.order-card-phone {
+  margin: 8px 0 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #991b1b;
+  letter-spacing: 0.02em;
+}
+
+.order-tab--failed {
+  color: #b91c1c;
+}
+
+.order-tab--failed.active {
+  border-color: #dc2626;
+  color: #991b1b;
+}
+
+.failed-tab-hint {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(220, 38, 38, 0.1);
+  color: #991b1b;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
 .order-card-address {
   margin: 0 0 6px;
   font-size: 1rem;

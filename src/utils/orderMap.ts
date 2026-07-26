@@ -96,6 +96,13 @@ export function mapApiOrder(raw: any): Order {
     isFirstOrder:
       raw.isFirstOrder === true ||
       String(raw.notes ?? "").includes("[ERSTBESTELLUNG]"),
+    terminalKind:
+      raw.terminalKind === 'payment_issue'
+        ? 'payment_issue'
+        : raw.terminalKind === 'kitchen'
+          ? 'kitchen'
+          : undefined,
+    checkoutTag: raw.checkoutTag ?? null,
   }
 }
 

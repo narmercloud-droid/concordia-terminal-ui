@@ -4,12 +4,13 @@ import { ordersApi } from '../api/orders.js'
 import { useOrderStore } from '../store/orderStore.js'
 import { useTerminalStore } from '../store/terminalStore.js'
 import { mapApiOrder } from '../utils/orderMap.js'
-import { isKitchenVisibleOrder } from '../utils/orderPayment.js'
+import { isKitchenVisibleOrder, isPaymentIssueOrder } from '../utils/orderPayment.js'
 import { isBerlinToday } from '../utils/berlinToday.js'
 import { alertNewOrder, startKeepAlive, stopKeepAlive } from '../native/terminalKeepAlive.js'
 import { warmPrinter } from '../native/printerWarmup.js'
 import { primeSunmiDetection } from '../native/printerPlatform.js'
 import { startBackendWarmup, stopBackendWarmup } from '../api/warmup.js'
+import { playUrgentPendingTone } from '../utils/notificationSound.js'
 
 const API_URL =
   import.meta.env.VITE_API_URL ??
@@ -95,16 +96,47 @@ export function startOrderRealtime() {
     const order = mapApiOrder(payload)
     if (!isBerlinToday(order.createdAt)) return
     if (!isKitchenVisibleOrder(order)) return
+    order.terminalKind = 'kitchen'
+    order.checkoutTag = null
     useOrderStore.getState().upsertOrder(order)
     if ((order.items?.length ?? 0) === 0) {
       void ordersApi.getOrderDetails(order.order_id).then((full) => {
-        useOrderStore.getState().upsertOrder(full)
+        useOrderStore.getState().upsertOrder({
+          ...full,
+          terminalKind: 'kitchen',
+          checkoutTag: null,
+        })
       })
     }
     void warmPrinter()
     if (!useTerminalStore.getState().ordersPaused) {
       const shortId = String(order.order_id || '').replace(/-/g, '').slice(-8).toUpperCase()
       void alertNewOrder(shortId ? `Order #${shortId}` : 'New order')
+    }
+  }
+  const onPaymentIssue = (payload: unknown) => {
+    const order = mapApiOrder(payload)
+    if (!isBerlinToday(order.createdAt)) return
+    if (isKitchenVisibleOrder(order)) return
+    order.terminalKind = 'payment_issue'
+    order.checkoutTag = order.checkoutTag ?? 'payment_failed'
+    const existing = useOrderStore.getState().orders.find((o) => o.order_id === order.order_id)
+    const isNewIssue = !existing || !isPaymentIssueOrder(existing)
+    useOrderStore.getState().upsertOrder(order)
+    if ((order.items?.length ?? 0) === 0) {
+      void ordersApi.getOrderDetails(order.order_id).then((full) => {
+        if (isKitchenVisibleOrder(full)) return
+        useOrderStore.getState().upsertOrder({
+          ...full,
+          terminalKind: 'payment_issue',
+          checkoutTag: full.checkoutTag ?? 'payment_failed',
+        })
+      })
+    }
+    if (isNewIssue && !useTerminalStore.getState().ordersPaused) {
+      void playUrgentPendingTone(true)
+      const shortId = String(order.order_id || '').replace(/-/g, '').slice(-8).toUpperCase()
+      void alertNewOrder(shortId ? `Payment failed #${shortId}` : 'Payment failed')
     }
   }
   const onConfirmed = (payload: unknown) => {
@@ -122,6 +154,12 @@ export function startOrderRealtime() {
     const id = payload?.orderId ?? payload?.id
     if (!id) return
     if (payload.status === 'cancelled' || payload.status === 'rejected') {
+      const existing = useOrderStore.getState().orders.find((o) => o.order_id === String(id))
+      // Keep payment-failed cards; drop other cancels from the kitchen boards.
+      if (existing && isPaymentIssueOrder(existing)) {
+        useOrderStore.getState().upsertOrder({ ...existing, status: 'cancelled' })
+        return
+      }
       useOrderStore.getState().removeOrder(String(id))
       return
     }
@@ -145,6 +183,7 @@ export function startOrderRealtime() {
   socket.on('reconnect_attempt', onReconnectAttempt)
   socket.on('connect_error', onConnectError)
   socket.on('order:new', onNew)
+  socket.on('order:payment_issue', onPaymentIssue)
   socket.on('order:confirmed', onConfirmed)
   socket.on('order:rejected', onStatus)
   socket.on('order_update', onUpdate)

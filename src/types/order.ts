@@ -55,6 +55,9 @@ export interface Order {
   courierToken?: string
   freeDrinkChoice?: string
   isFirstOrder?: boolean
+  /** Display-only failed payment (terminal Failed tab). */
+  terminalKind?: 'kitchen' | 'payment_issue'
+  checkoutTag?: string | null
 }
 
 export interface OrderDetails extends Order {

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { Order } from '../types/order.js'
 import { ordersApi } from '../api/orders.js'
 import { isBerlinToday } from '../utils/berlinToday.js'
+import { isKitchenVisibleOrder } from '../utils/orderPayment.js'
 
 function mergeOrders(existing: Order[], fetched: Order[]): Order[] {
   const byId = new Map<string, Order>()
@@ -14,7 +15,12 @@ function mergeOrders(existing: Order[], fetched: Order[]): Order[] {
 
   for (const order of fetched) {
     const prev = byId.get(order.order_id)
-    byId.set(order.order_id, prev ? { ...prev, ...order } : order)
+    const merged = prev ? { ...prev, ...order } : order
+    if (isKitchenVisibleOrder(merged) || order.terminalKind === 'kitchen') {
+      merged.terminalKind = 'kitchen'
+      merged.checkoutTag = null
+    }
+    byId.set(order.order_id, merged)
   }
 
   return Array.from(byId.values()).sort(
@@ -58,7 +64,13 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       const idx = state.orders.findIndex((o) => o.order_id === order.order_id)
       if (idx === -1) return { orders: [order, ...state.orders] }
       const next = [...state.orders]
-      next[idx] = { ...next[idx], ...order }
+      const merged = { ...next[idx], ...order }
+      // Paid kitchen orders must leave the Failed tab even if prior soft-fail tags remain.
+      if (isKitchenVisibleOrder(merged) || order.terminalKind === 'kitchen') {
+        merged.terminalKind = 'kitchen'
+        merged.checkoutTag = null
+      }
+      next[idx] = merged
       return { orders: next }
     })
   },

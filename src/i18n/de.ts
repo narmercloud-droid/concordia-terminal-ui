@@ -25,6 +25,7 @@ export const de = {
   arabic: 'العربية',
   back: 'Zurück',
   guest: 'Gast',
+  phone: 'Telefon',
   delivery: 'Lieferung',
   pickup: 'Abholung',
   scheduled: 'Geplant',
@@ -64,7 +65,13 @@ export const de = {
   newOrder: 'NEU',
   tabActive: 'Zubereiten',
   tabTransit: 'Übergabe',
+  tabFailed: 'Zahlung fehlgeschlagen',
   tabDone: 'Fertig',
+  failedTabHint:
+    'Zahlung nicht abgeschlossen — Kunde anrufen. Nicht zubereiten, bis die Zahlung erfolgreich ist.',
+  paymentFailedBadge: 'Zahlung fehlgeschlagen',
+  paymentFailedDetailHint:
+    'Online-Zahlung fehlgeschlagen oder abgebrochen. Kunde kontaktieren — Bestellung nicht annehmen.',
   actionPreparing: 'In Zubereitung',
   actionReadyPickup: 'Bereit zur Abholung',
   actionOnTheWay: 'Unterwegs',

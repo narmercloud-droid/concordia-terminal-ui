@@ -26,6 +26,16 @@ export function isKitchenVisibleOrder(order: Pick<Order, 'paymentMethod' | 'paym
   return true
 }
 
+/** Failed online payment — display-only Failed tab (not kitchen). */
+export function isPaymentIssueOrder(
+  order: Pick<Order, 'paymentMethod' | 'paymentStatus' | 'terminalKind' | 'checkoutTag'>,
+) {
+  if (isKitchenVisibleOrder(order)) return false
+  if (order.terminalKind === 'payment_issue') return true
+  if (order.checkoutTag === 'payment_failed') return true
+  return false
+}
+
 export function isPaidOrder(order: Pick<Order, 'paymentMethod' | 'paymentStatus'>) {
   return isPaymentSettled(order.paymentStatus)
 }

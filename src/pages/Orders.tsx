@@ -17,7 +17,7 @@ import { useI18n } from '../i18n/index.js'
 import type { Order } from '../types/order.js'
 import '../App.css'
 
-const TABS: OrderTab[] = ['active', 'transit', 'done']
+const TABS: OrderTab[] = ['active', 'transit', 'failed', 'done']
 
 const Orders = () => {
   const orders = useOrderStore((state) => state.orders)
@@ -37,11 +37,17 @@ const Orders = () => {
   const tabLabels: Record<OrderTab, string> = {
     active: t('tabActive'),
     transit: t('tabTransit'),
+    failed: t('tabFailed'),
     done: t('tabDone'),
   }
 
   const tabCounts = useMemo(() => {
-    const counts: Record<OrderTab, number> = { active: 0, transit: 0, done: 0 }
+    const counts: Record<OrderTab, number> = {
+      active: 0,
+      transit: 0,
+      failed: 0,
+      done: 0,
+    }
     for (const order of orders) {
       counts[bucketOrder(order)] += 1
     }
@@ -49,11 +55,12 @@ const Orders = () => {
   }, [orders])
 
   const filteredOrders = useMemo(
-    () => sortOrdersForTab(
-      orders.filter((o) => bucketOrder(o) === activeTab),
-      activeTab,
-      now,
-    ),
+    () =>
+      sortOrdersForTab(
+        orders.filter((o) => bucketOrder(o) === activeTab),
+        activeTab,
+        now,
+      ),
     [orders, activeTab, now],
   )
 
@@ -123,7 +130,9 @@ const Orders = () => {
             type="button"
             role="tab"
             aria-selected={activeTab === tab}
-            className={`order-tab ${activeTab === tab ? 'active' : ''}`}
+            className={`order-tab ${activeTab === tab ? 'active' : ''} ${
+              tab === 'failed' && tabCounts.failed > 0 ? 'order-tab--failed' : ''
+            }`}
             onClick={() => setActiveTab(tab)}
           >
             {tabLabels[tab]}
@@ -131,6 +140,12 @@ const Orders = () => {
           </button>
         ))}
       </div>
+
+      {activeTab === 'failed' && filteredOrders.length > 0 ? (
+        <p className="failed-tab-hint" role="note">
+          {t('failedTabHint')}
+        </p>
+      ) : null}
 
       {loading ? (
         <Loader />
@@ -144,9 +159,12 @@ const Orders = () => {
             <OrderCard
               key={order.order_id}
               order={order}
-              showTimer={activeTab !== 'done'}
+              showTimer={activeTab !== 'done' && activeTab !== 'failed'}
+              paymentIssue={activeTab === 'failed'}
               onClick={() => navigate(`/orders/${order.order_id}`)}
-              onQuickStatus={() => handleQuickStatus(order)}
+              onQuickStatus={
+                activeTab === 'failed' ? undefined : () => handleQuickStatus(order)
+              }
               quickStatusBusy={updatingId === order.order_id}
             />
           ))}

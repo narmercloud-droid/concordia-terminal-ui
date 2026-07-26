@@ -27,6 +27,7 @@ export const ar: Record<TranslationKey, string> = {
   arabic: 'العربية',
   back: 'رجوع',
   guest: 'ضيف',
+  phone: 'الهاتف',
   delivery: 'توصيل',
   pickup: 'استلام',
   scheduled: 'مجدول',
@@ -66,7 +67,13 @@ export const ar: Record<TranslationKey, string> = {
   newOrder: 'جديد',
   tabActive: 'تحضير',
   tabTransit: 'تسليم',
+  tabFailed: 'فشل الدفع',
   tabDone: 'جاهز',
+  failedTabHint:
+    'الدفع لم يكتمل — اتصل بالعميل. لا تحضّر الطلب قبل نجاح الدفع.',
+  paymentFailedBadge: 'فشل الدفع',
+  paymentFailedDetailHint:
+    'فشل الدفع الإلكتروني أو أُلغي. اتصل بالعميل — لا تقبل الطلب.',
   actionPreparing: 'قيد التحضير',
   actionReadyPickup: 'جاهز للاستلام',
   actionOnTheWay: 'في الطريق',

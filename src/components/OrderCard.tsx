@@ -9,6 +9,7 @@ import { formatOrderDisplayId } from '../utils/orderDisplay.js'
 interface OrderCardProps {
   order: Order
   showTimer?: boolean
+  paymentIssue?: boolean
   onClick: () => void
   onQuickStatus?: () => void
   quickStatusBusy?: boolean
@@ -42,6 +43,7 @@ function BagHandIcon() {
 export const OrderCard = memo(function OrderCard({
   order,
   showTimer = true,
+  paymentIssue = false,
   onClick,
   onQuickStatus,
   quickStatusBusy,
@@ -49,19 +51,30 @@ export const OrderCard = memo(function OrderCard({
   const t = useI18n((s) => s.t)
   const pending = isPendingOrder(order)
   const pickup = isPickup(order)
-  const primaryAction = useMemo(() => getPrimaryStageAction(order), [order])
+  const primaryAction = useMemo(
+    () => (paymentIssue ? null : getPrimaryStageAction(order)),
+    [order, paymentIssue],
+  )
 
   const headline = order.deliveryAddress?.trim() || order.customerName?.trim() || t('guest')
   const displayId = formatOrderDisplayId(order.order_id)
+  const phone = order.customerPhone?.trim()
 
   return (
-    <article className={`order-card status-${order.status} ${pending ? 'order-card-pending' : ''}`}>
+    <article
+      className={`order-card status-${order.status} ${pending ? 'order-card-pending' : ''} ${
+        paymentIssue ? 'order-card--payment-failed' : ''
+      }`}
+    >
       {showTimer ? <CircularTimer order={order} /> : <div className="order-timer-spacer" aria-hidden />}
 
       <button type="button" className="order-card-body" onClick={onClick}>
         <p className="order-card-address">{headline}</p>
         <div className="order-card-meta">
           <span className="order-id">{displayId}</span>
+          {paymentIssue ? (
+            <span className="order-badge order-badge--payment-failed">{t('paymentFailedBadge')}</span>
+          ) : null}
           {pickup ? (
             <span className="order-type-icon order-type-icon--pickup" title={t('pickup')}>
               <BagHandIcon />
@@ -77,6 +90,9 @@ export const OrderCard = memo(function OrderCard({
             <span className="order-badge">{t('firstOrder')}</span>
           ) : null}
         </div>
+        {paymentIssue && phone ? (
+          <p className="order-card-phone">{phone}</p>
+        ) : null}
       </button>
 
       {primaryAction && onQuickStatus ? (
