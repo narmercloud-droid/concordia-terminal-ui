@@ -149,7 +149,17 @@ function formatAddressBlock(address?: string): string[] {
     .map((p) => p.trim())
     .filter(Boolean)
   if (parts.length === 0) return []
-  return parts
+  if (parts.length <= 2) return parts
+  return [parts[0], parts[parts.length - 1]]
+}
+
+function addressHints(address?: string): string[] {
+  const parts = (address ?? '')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
+  if (parts.length <= 2) return []
+  return parts.slice(1, -1)
 }
 
 function isPaid(order: OrderDetails): boolean {
@@ -310,9 +320,9 @@ export function buildOrderReceipt(
   options?: TicketOptions,
 ): OrderReceipt {
   const branch = displayBranchName(options?.branchName ?? order.branchName)
+  const customerNotes = splitCustomerNotes(order.notes)
   const pickup = isPickup(order.delivery_type)
   const paid = isPaid(order)
-  const customerNotes = splitCustomerNotes(order.notes)
 
   const subtotal =
     order.subtotal > 0
@@ -404,15 +414,18 @@ export function buildOrderReceipt(
     }
   } else {
     const addressParts = formatAddressBlock(order.deliveryAddress)
+    const hintNotes = [...addressHints(order.deliveryAddress), ...(customerNotes ? customerNotes.split('\n') : [])]
+      .map((line) => line.trim())
+      .filter(Boolean)
     if (addressParts.length) {
       lines.push(`${BOLD}Adresse:`)
       for (const part of addressParts) {
         lines.push(part)
       }
     }
-    if (customerNotes) {
+    if (hintNotes.length) {
       lines.push(`${BOLD}Anmerkungen:`)
-      appendOrderNotes(lines, customerNotes)
+      appendOrderNotes(lines, hintNotes.join('\n'))
     }
   }
 
